@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# golangci-lint v2 configuration for the Go API. CI pins the version (see
+# .github/workflows/ci.yml); docs/SECURITY-PLAN.md describes the security linters.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - gosec          # security issues (SQL building, file paths, weak crypto, ...)
+    - bodyclose      # HTTP response bodies are closed
+    - noctx          # HTTP requests carry a context
+    - rowserrcheck   # rows.Err() is checked
+    - sqlclosecheck  # rows and statements are closed
+    - errorlint      # errors are wrapped and compared correctly
+    - copyloopvar
+    - misspell
+    - unconvert
+  settings:
+    gosec:
+      severity: low
+      confidence: low
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/madarlevi/kolikaja
