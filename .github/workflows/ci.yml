@@ -1,0 +1,391 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Continuous integration for madarlevi/kolikaja.
+# Jobs for components that do not exist yet are skipped through the `detect` job
+# (hashFiles() is not available in job-level `if`). The security tooling is described
+# in docs/SECURITY-PLAN.md. Third-party actions are pinned to full commit SHAs;
+# Dependabot keeps them current.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1" # weekly on main: CodeQL, govulncheck, gitleaks, Semgrep
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "24"
+  REDOCLY_CLI_VERSION: "2.84.0"
+  GOLANGCI_LINT_VERSION: "v2.15.0"
+  GOSEC_VERSION: "v2.30.0"
+  GOVULNCHECK_VERSION: "v1.10.0"
+  ACTIONLINT_VERSION: "v1.7.12"
+  MIGRATE_VERSION: "v4.20.1"
+  SEMGREP_VERSION: "1.187.0"
+  SEMGREP_SEND_METRICS: "off" # no telemetry (CLAUDE.md)
+
+jobs:
+  detect:
+    name: Detect components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.files.outputs.api }}
+      migrations: ${{ steps.files.outputs.migrations }}
+      web: ${{ steps.files.outputs.web }}
+      compose: ${{ steps.files.outputs.compose }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check which components exist
+        id: files
+        run: |
+          {
+            echo "api=${{ hashFiles('apps/api/go.mod') != '' }}"
+            echo "migrations=${{ hashFiles('apps/api/migrations/*.up.sql') != '' }}"
+            echo "web=${{ hashFiles('apps/web/package.json') != '' }}"
+            echo "compose=${{ hashFiles('docker-compose.yml') != '' }}"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  workflows:
+    name: Workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: apps/api/go.mod
+          cache: false
+      - name: actionlint (with shellcheck)
+        run: go run "github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}" -color
+
+  openapi:
+    name: OpenAPI contract and authorization matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Lint the contract (Redocly)
+        run: npx --yes "@redocly/cli@${REDOCLY_CLI_VERSION}" lint docs/api/openapi.yaml
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: Check the authorization matrix (one row per operation)
+        run: scripts/check-authz-matrix.sh
+
+  go:
+    name: Go (fmt, vet, test, golangci-lint, gosec, govulncheck)
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            echo "::error::gofmt found unformatted files"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race -count=1 ./...
+      - name: golangci-lint (gosec enabled)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: apps/api
+      - name: gosec
+        run: go run "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}" -quiet ./...
+      - name: govulncheck
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+  migrations:
+    name: Migrations and schema constraints (PostgreSQL 17)
+    needs: detect
+    if: needs.detect.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: kolikaja_ci
+          POSTGRES_DB: kolikaja_ci
+          # Ephemeral database inside the job; trust auth avoids a credential in this file.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kolikaja_ci -d kolikaja_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://kolikaja_ci@localhost:5432/kolikaja_ci?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - name: golang-migrate CLI (up, down 1, up, down all)
+        run: |
+          go install -tags postgres "github.com/golang-migrate/migrate/v4/cmd/migrate@${MIGRATE_VERSION}"
+          migrate_bin="$(go env GOPATH)/bin/migrate"
+          run_migrate() { "$migrate_bin" -path apps/api/migrations -database "$DATABASE_URL" "$@"; }
+          run_migrate up
+          run_migrate version
+          run_migrate down 1
+          run_migrate up
+          run_migrate down -all
+      - name: Migration and constraint tests
+        working-directory: apps/api
+        env:
+          KOLIKAJA_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: go test -count=1 -v ./tests/integration/...
+
+  web:
+    name: Web (audit, lint, typecheck, test, build)
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Require eslint-plugin-security
+        run: |
+          node -e "const p=require('./package.json');const d={...p.dependencies,...p.devDependencies};if(!d['eslint-plugin-security']){console.error('eslint-plugin-security must be a devDependency (docs/SECURITY-PLAN.md)');process.exit(1)}"
+      - name: npm audit (high and critical fail)
+        run: npm audit --audit-level=high
+      - name: Lint (includes eslint-plugin-security)
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm run test
+      - name: Build
+        run: npm run build
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  semgrep:
+    name: SQL injection and code rules (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Semgrep
+        run: pipx install "semgrep==${SEMGREP_VERSION}"
+      - name: Test the custom rules
+        # --test skips hidden directories, so every rule is passed explicitly with its test file.
+        run: |
+          semgrep --test --config .semgrep/go-sql-string-building.yml .semgrep/go-sql-string-building.go
+          semgrep --test --config .semgrep/ts-sql-string-building.yml .semgrep/ts-sql-string-building.ts
+      - name: Scan (custom rules + Go and TypeScript rulesets)
+        run: >-
+          semgrep scan --metrics=off --error
+          --config .semgrep
+          --config p/golang
+          --config p/typescript
+          --exclude .semgrep
+          .
+
+  codeql-go:
+    name: CodeQL (go)
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: go
+          build-mode: autobuild
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          category: /language:go
+
+  codeql-js:
+    name: CodeQL (javascript-typescript)
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          category: /language:javascript-typescript
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: high
+
+  docker:
+    name: Docker images and Compose smoke test
+    needs: detect
+    if: needs.detect.outputs.compose == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/api.Dockerfile
+          push: false
+          load: true
+          tags: kolikaja-api:ci
+      - name: Build the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/web.Dockerfile
+          push: false
+          load: true
+          tags: kolikaja-web:ci
+      - name: Create .env with generated secrets
+        run: |
+          cp .env.example .env
+          deploy/scripts/gen-secrets.sh .env
+      - name: Validate the Compose file
+        run: docker compose config --quiet
+      - name: Start the stack
+        run: docker compose up --build --wait --wait-timeout 300
+      - name: Smoke test (health endpoints)
+        run: |
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/readyz
+      - name: Compose logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
+  zap:
+    name: OWASP ZAP baseline scan
+    needs: [detect, docker]
+    if: needs.detect.outputs.compose == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          deploy/scripts/gen-secrets.sh .env
+          docker compose up --build --wait --wait-timeout 300
+      - name: ZAP baseline
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:8080
+          rules_file_name: .zap/rules.tsv
+          cmd_options: -a
+          allow_issue_writing: false
+          fail_action: true
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

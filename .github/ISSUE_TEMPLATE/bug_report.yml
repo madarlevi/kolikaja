@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+name: Bug report
+description: Something in the KoliKaja API, web app or deployment does not work as expected.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Do not report security vulnerabilities here** – follow SECURITY.md instead.
+        Never paste passwords, tokens, API keys, cookies, `.env` contents or personal data of other people.
+        Android and iOS app bugs belong in madarlevi/kolikaja-android and madarlevi/kolikaja-ios.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - API (Go backend)
+        - Web app
+        - Deployment (Docker Compose, proxy, backup)
+        - API contract / documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag (for example v0.1.0) or commit SHA; `GET /api/v1/meta` shows the server version.
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the `request_id` from the error response if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser and OS, or host OS and Docker / Compose versions for deployment problems.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines with secrets and personal data removed.
+      render: text

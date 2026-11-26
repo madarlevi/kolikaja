@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Release on tag vX.Y.Z:
+# - creates the GitHub release and attaches the API contract as openapi-vX.Y.Z.yaml
+#   (plus its SHA-256), which the mobile repositories pin in api-version.txt;
+# - builds and pushes the API and web images to GHCR once their Dockerfiles exist.
+# Only GITHUB_TOKEN is used.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Release with the API contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the tag matches info.version of the contract
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag $TAG is not vX.Y.Z"
+            exit 1
+          fi
+          version="$(awk '/^info:/{in_info=1; next} in_info && /^  version:/{print $2; exit} /^[^ ]/{in_info=0}' docs/api/openapi.yaml)"
+          if [ "v${version}" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match info.version ${version} in docs/api/openapi.yaml"
+            exit 1
+          fi
+      - name: Create the release and attach openapi-${{ github.ref_name }}.yaml
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          asset="openapi-${TAG}.yaml"
+          cp docs/api/openapi.yaml "$asset"
+          sha256sum "$asset" > "${asset}.sha256"
+          cat "${asset}.sha256"
+          args=(--verify-tag --title "KoliKaja ${TAG}" --notes "API contract ${TAG}: ${asset} (SHA-256 in ${asset}.sha256). Mobile repositories pin this version in api-version.txt.")
+          case "$TAG" in
+            v0.*) args+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" "${args[@]}" "$asset" "${asset}.sha256"
+
+  images:
+    name: Container images (GHCR)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check for Dockerfiles
+        id: files
+        run: |
+          {
+            echo "api=${{ hashFiles('deploy/docker/api.Dockerfile') != '' }}"
+            echo "web=${{ hashFiles('deploy/docker/web.Dockerfile') != '' }}"
+          } | tee -a "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.files.outputs.api == 'true' || steps.files.outputs.web == 'true'
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: steps.files.outputs.api == 'true' || steps.files.outputs.web == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: API image metadata
+        id: api-meta
+        if: steps.files.outputs.api == 'true'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/kolikaja-api
+          tags: type=semver,pattern={{version}}
+      - name: Build and push the API image
+        if: steps.files.outputs.api == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/api.Dockerfile
+          push: true
+          tags: ${{ steps.api-meta.outputs.tags }}
+          labels: ${{ steps.api-meta.outputs.labels }}
+      - name: Web image metadata
+        id: web-meta
+        if: steps.files.outputs.web == 'true'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/kolikaja-web
+          tags: type=semver,pattern={{version}}
+      - name: Build and push the web image
+        if: steps.files.outputs.web == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/web.Dockerfile
+          push: true
+          tags: ${{ steps.web-meta.outputs.tags }}
+          labels: ${{ steps.web-meta.outputs.labels }}

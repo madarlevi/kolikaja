@@ -7,7 +7,10 @@
 openapi: 3.1.0
 info:
   title: KoliKaja API
-  version: 1.0.0
+  # Contract release version. It equals the release tag without "v" (checked by
+  # .github/workflows/release.yml); the URL version of the API is /api/v1 independently.
+  # 0.x: the contract may still change before the first stable release.
+  version: 0.1.0
   summary: Multi-dormitory food menu and community rating platform.
   description: |
     REST API shared by the KoliKaja web, Android and iOS clients and by server-to-server integrations.

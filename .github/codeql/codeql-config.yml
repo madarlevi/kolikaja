@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# CodeQL configuration (used by the codeql-go and codeql-js jobs of ci.yml).
+name: KoliKaja CodeQL
+queries:
+  - uses: security-extended
+paths-ignore:
+  # Deliberately vulnerable Semgrep rule test cases.
+  - .semgrep
+  - "**/node_modules"
+  - "**/dist"

@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Custom Semgrep rule: SQL text passed to a database call must be a constant with
+# pgx placeholders ($1, $2, ...). Tests: go-sql-string-building.go (semgrep --test .semgrep).
+rules:
+  - id: kolikaja-go-sql-string-building
+    languages: [go]
+    severity: ERROR
+    message: >-
+      SQL passed to $DB.$METHOD is built with fmt.Sprintf, string concatenation or a
+      strings.Builder. Use a constant query with pgx placeholders ($1, $2, ...) and pass
+      values as arguments (CLAUDE.md, "SQL"). Identifiers that must vary come from an
+      allow-list in code, never from input.
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+      owasp: "A03:2021 - Injection"
+      references:
+        - https://pkg.go.dev/github.com/jackc/pgx/v5
+    patterns:
+      - pattern-either:
+          # Built inline in the call (with or without a context argument).
+          - pattern: $DB.$METHOD($CTX, fmt.Sprintf(...), ...)
+          - pattern: $DB.$METHOD(fmt.Sprintf(...), ...)
+          - pattern: $DB.$METHOD($CTX, $A + $B, ...)
+          - pattern: $DB.$METHOD($A + $B, ...)
+          - pattern: $DB.$METHOD($CTX, $SB.String(), ...)
+          - pattern: $DB.$METHOD($SB.String(), ...)
+          # Built in a variable first, then passed to the call.
+          - pattern: |
+              $Q := fmt.Sprintf(...)
+              ...
+              $DB.$METHOD($CTX, $Q, ...)
+          - pattern: |
+              $Q := $A + $B
+              ...
+              $DB.$METHOD($CTX, $Q, ...)
+          - pattern: |
+              $Q += $A
+              ...
+              $DB.$METHOD($CTX, $Q, ...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(Query|QueryRow|Exec|QueryContext|QueryRowContext|ExecContext|Prepare|PrepareContext|Queue|CopyFrom|QueryFunc)$
