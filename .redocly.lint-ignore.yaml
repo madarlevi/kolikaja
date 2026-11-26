@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+#
+# Every entry needs a reason recorded in docs/DECISIONS.md.
+# - /healthz and /readyz are unauthenticated health probes for Docker and the reverse proxy.
+#   They have no client error cases, so a 4XX response would be fictitious (DECISIONS.md, T-17).
+docs/api/openapi.yaml:
+  operation-4xx-response:
+    - '#/paths/~1healthz/get/responses'
+    - '#/paths/~1readyz/get/responses'

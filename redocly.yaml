@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Lint configuration for the API contract.
+# Run: npx @redocly/cli lint docs/api/openapi.yaml
+extends:
+  - recommended
+
+rules:
+  # Every operation must document its error responses.
+  operation-4xx-response: error
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-summary: error
+  operation-tag-defined: error
+  no-unused-components: error
+  security-defined: error
+  info-license: error
+  no-ambiguous-paths: error
+  path-parameters-defined: error
