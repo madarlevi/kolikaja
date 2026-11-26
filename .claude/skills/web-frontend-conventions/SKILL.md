@@ -5,6 +5,8 @@ description: Use when building or changing the React web app in apps/web: routin
 
 # Web frontend conventions
 
+UI direction, components, tokens and accessibility baseline: `docs/DESIGN.md` (read it before UI work).
+
 ## Structure
 Feature-first folders under `apps/web/src/features/<name>/` with `pages/`, `components/`, `hooks/` and `queries.ts`. Shared UI in `src/components/ui/`. Routes registered in `src/app/router.tsx`, lazy-loaded per feature.
 

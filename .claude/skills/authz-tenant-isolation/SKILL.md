@@ -18,6 +18,9 @@ KoliKaja is multi-tenant by dormitory. A user in dormitory A must never read or 
 8. **Audit:** moderator and admin actions write a row to `audit_logs` in the same transaction.
 
 ## Authorization test template (`apps/api/tests/authz/`)
+Name the test `TestAuthz_<OperationId>` (operationId with a capital first letter, for example
+`TestAuthz_PutMyRating`). `docs/api/authz-matrix.md` lists every operation; once the function exists, the
+matrix (regenerated with `scripts/check-authz-matrix.sh --write`) switches the row from "planned" to the test name.
 For each new endpoint, add table-driven tests with at least:
 - anonymous user -> 401
 - authenticated non-member of dormitory A -> 404 on A's resource

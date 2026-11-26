@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
 # PreToolUse hook: refuse writes to secret-bearing files.
 # Exit code 2 blocks the tool call and feeds the message back to the agent.
 set -uo pipefail

@@ -29,10 +29,11 @@ These documents are project templates. They are not legal advice and must not cl
 3. No `TODO(operator)` is missing from contact fields in SECURITY, CODE_OF_CONDUCT, PRIVACY, TRADEMARKS.
 4. No ® symbol anywhere unless registration is verified (it is not).
 5. README trademark notice links to `TRADEMARKS.md`.
-6. Web footer, Android About screen and iOS About screen contain the copyright and trademark notice and link to `TRADEMARKS.md`.
+6. The web footer contains the copyright and trademark notice and links to `TRADEMARKS.md`. (The Android and iOS About screens are audited in madarlevi/kolikaja-android and madarlevi/kolikaja-ios.)
 7. Disclaimer does not exclude liability that law does not allow excluding (no claim of excluding consumer rights).
 8. DISCLAIMER states the food/allergen limitation and that users must verify allergen information with the provider.
-9. THIRD_PARTY_LICENSES lists name, version, SPDX license identifier and source URL for every dependency in Go, npm, Gradle and SwiftPM. Generate the list with tools where possible (`go-licenses`, `license-checker`, Gradle license plugin); flag unknown or incompatible licenses.
+9. THIRD_PARTY_LICENSES lists name, version, SPDX license identifier and source URL for every dependency in Go, npm and the Docker base images of this repository. Generate the list with tools where possible (`go-licenses`, `license-checker`); flag unknown or incompatible licenses. Gradle and SwiftPM dependencies are audited in the mobile repositories.
+10a. The three repositories (kolikaja, kolikaja-android, kolikaja-ios) use the same LICENSE text (same SHA-256), license identifier and copyright holder.
 10. No dependency with a license incompatible with AGPL-3.0 without explicit justification in THIRD_PARTY_LICENSES.
 11. The final report says which items are verified, which are `TODO(operator)`, and which were not checked.
 

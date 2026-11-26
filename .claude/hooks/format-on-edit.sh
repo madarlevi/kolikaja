@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
 # PostToolUse hook: format the file that was just edited, if the formatter exists.
 # Requires jq to read the hook payload. If jq is missing, the hook does nothing.
 set -uo pipefail
