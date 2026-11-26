@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Normalize text files to LF in the repository and in the working tree.
+# Reason: the maintainer works on Windows with core.autocrlf=true; shell scripts,
+# SQL migrations and Dockerfiles must keep LF endings to work inside Linux containers.
+
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.jar binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Generated API clients: collapse in diffs.
+apps/web/src/api/generated/** linguist-generated=true
+apps/android/**/core/network/generated/** linguist-generated=true
+apps/ios/**/Core/Network/Generated/** linguist-generated=true

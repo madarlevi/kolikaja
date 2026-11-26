@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+
+# --- Secrets and local configuration (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+*.mobileprovision
+
+# --- Claude Code local overrides ---
+.claude/settings.local.json
+
+# --- OS and editor files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# --- Go (apps/api) ---
+apps/api/bin/
+apps/api/tmp/
+*.test
+*.out
+coverage.*
+
+# --- Node / web (apps/web) ---
+node_modules/
+apps/web/dist/
+apps/web/dev-dist/
+apps/web/coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- Android (apps/android) ---
+apps/android/.gradle/
+apps/android/build/
+apps/android/app/build/
+apps/android/local.properties
+apps/android/captures/
+*.apk
+*.aab
+
+# --- iOS (apps/ios) ---
+apps/ios/build/
+apps/ios/DerivedData/
+xcuserdata/
+*.xcuserstate
+*.ipa
+
+# --- Deployment runtime data and backups ---
+deploy/backups/
+deploy/data/
