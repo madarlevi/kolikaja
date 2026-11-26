@@ -23,6 +23,7 @@ Contents
 16. Licensing notes
 17. Extension points (out of scope for this version)
 18. Verification status and open questions
+19. Continuous integration, releases and security gates
 
 ---
 
@@ -47,6 +48,10 @@ source of truth; the web app, the Android app and the iOS app use the same versi
 Design goals, in order: security and tenant isolation, low resource use (single small VM), maintainability,
 user experience. No microservices: one API process, one database, one object store.
 
+**Repositories (D-06).** This repository (madarlevi/kolikaja) holds the API, the web app, the deployment,
+the documentation and the contract. The Android app is developed in madarlevi/kolikaja-android and the iOS
+app in madarlevi/kolikaja-ios; they talk to the API only through the released contract (§12, D-09).
+
 ## 2. Repository layout
 
 ```
@@ -63,18 +68,26 @@ apps/api/                  Go backend (module github.com/madarlevi/kolikaja/apps
                            recommendations, comments, photos, announcements, notifications,
                            moderation, apikeys, audit, stats, admin
                            each: handler.go, service.go, repo.go, types.go (+ _test.go)
+  internal/contract/       OpenAPI loader used by tooling and test harnesses (not by the server)
+  internal/authzmatrix/    generator and checker of docs/api/authz-matrix.md
   migrations/              NNNN_name.up.sql / NNNN_name.down.sql
-  tests/authz/             cross-tenant authorization tests (one table per endpoint)
-  tests/integration/       repository and HTTP tests against PostgreSQL
+  tools/authzmatrix/       CLI behind scripts/check-authz-matrix.sh
+  tests/authz/             cross-tenant authorization tests, TestAuthz_<OperationId>
+  tests/integration/       migration and schema-constraint tests against PostgreSQL
+  tests/security/          SQL injection and XSS payload harness generated from the contract
 apps/web/                  React + TypeScript + Vite (src/app, src/features, src/api, src/components/ui,
                            src/i18n, src/lib)
-apps/android/              Kotlin + Compose, package io.github.madarlevi.kolikaja
-apps/ios/                  SwiftUI app (KoliKaja/App, Core/Network, Core/Auth, Features, Resources)
 deploy/                    docker/ (Dockerfiles), proxy/ (Caddyfile), scripts/ (backup, restore, secrets)
-docs/                      SPEC, DECISIONS, ARCHITECTURE, PROGRESS, ENVIRONMENT, api/openapi.yaml
-scripts/                   repository tooling (client generation, license audit)
+docs/                      SPEC, DECISIONS, ARCHITECTURE, PROGRESS, ENVIRONMENT, SECURITY-PLAN, DESIGN,
+                           LEGAL_AUDIT, api/openapi.yaml, api/authz-matrix.md
+scripts/                   repository tooling (check-authz-matrix.sh; web client generation in phase 4)
+.github/                   CI and release workflows, CodeQL config, Dependabot, issue and PR templates
+.semgrep/                  custom Semgrep rules (SQL string building in Go and TypeScript) with tests
+.zap/                      OWASP ZAP baseline rule levels
 redocly.yaml               OpenAPI lint configuration (+ .redocly.lint-ignore.yaml)
 ```
+The Android app (madarlevi/kolikaja-android, application ID `io.github.madarlevi.kolikaja`, still to be
+confirmed) and the iOS app (madarlevi/kolikaja-ios) have their own repositories, documentation and CI.
 
 ## 3. Backend structure
 
@@ -514,12 +527,20 @@ CORS is off unless `CORS_ALLOWED_ORIGINS` lists origins; native apps do not need
   `cookieAuth` **and** `csrfToken`.
 - Lists: `{ "data": [...], "next_cursor": "…" | null }`. Cursors are opaque base64url-encoded sort keys;
   they only move within the caller's already-authorized result set, so they are not signed.
-- Client generation (`scripts/gen-clients.sh`, phases 4–6; generated files are committed and never edited):
-  TypeScript `openapi-typescript` + `openapi-fetch` → `apps/web/src/api/generated/`;
-  Kotlin `openapi-generator` (`kotlin`, `jvm-retrofit2`, `kotlinx_serialization`) →
-  `apps/android/.../core/network/generated/`; Swift `openapi-generator` (`swift5`, as the `api-contract` skill
-  says; Apple's `swift-openapi-generator` will be evaluated in phase 6) → `apps/ios/KoliKaja/Core/Network/Generated/`.
+- Authorization matrix: `docs/api/authz-matrix.md` has one row per operation (authentication, roles, tenant
+  scoping, tenant check location, authorization test). It is generated from the contract by
+  `scripts/check-authz-matrix.sh --write`; CI fails when a row is missing, unknown or stale.
+- Web client generation (`scripts/gen-clients.sh`, phase 4; generated files are committed and never edited):
+  TypeScript `openapi-typescript` + `openapi-fetch` → `apps/web/src/api/generated/`.
+- **Contract distribution (D-09).** The contract exists only in this repository. A tag `vX.Y.Z` on `main`
+  runs `.github/workflows/release.yml`, which checks that `info.version` is `X.Y.Z` and attaches
+  `openapi-vX.Y.Z.yaml` and its SHA-256 to the GitHub release (0.x releases are pre-releases). The mobile
+  repositories pin the version in `api-version.txt` and the checksum in `api-contract.sha256`; their CI
+  downloads the asset, verifies the checksum, regenerates the client with a pinned OpenAPI Generator
+  (Kotlin `jvm-retrofit2` + kotlinx.serialization; Swift `swift5` URLSession + async/await) and fails if the
+  generated code differs from the committed code.
 - Compatibility: `oasdiff breaking` against the previous released contract; breaking changes need `/api/v2`.
+  From the first release on, released migrations are frozen (CLAUDE.md); schema changes go into new migrations.
 
 ## 13. Deployment topology (phase 3)
 Compose services: `postgres` (17-alpine, volume, `pg_isready`), `minio` (volume, health check; see the open
@@ -540,14 +561,13 @@ a DML-only runtime role is a documented hardening option for phase 3.
   default, English), Radix UI primitives, `vite-plugin-pwa` (app shell cached, API responses not cached;
   offline view shows last data with a stale marker). Auth via cookies only; one refresh in flight across tabs
   (Web Locks API). Dark mode default.
-- **Android**: Kotlin, Compose, Material 3, Hilt, Navigation Compose, Retrofit + OkHttp + kotlinx.serialization,
-  Coil, DataStore + Keystore AES-GCM for tokens, system photo picker. minSdk 26. Strings in `values/`
-  (English) and `values-hu/` (Hungarian). Application ID `io.github.madarlevi.kolikaja` (see §18).
-- **iOS**: Swift, SwiftUI, minimum iOS 17 so view models use the Observation framework (`@Observable`);
-  `URLSession` async/await, an actor-isolated API client with a single refresh task, Keychain storage,
-  `PhotosPicker`, `Localizable.xcstrings` (Hungarian and English).
+- **Android** (madarlevi/kolikaja-android, its own `docs/ARCHITECTURE.md`): Kotlin, Compose, Material 3,
+  Retrofit + kotlinx.serialization, Keystore-backed token storage, minSdk 26.
+- **iOS** (madarlevi/kolikaja-ios, its own `docs/ARCHITECTURE.md`): SwiftUI, minimum iOS 17 with
+  `@Observable`, URLSession async/await, Keychain token storage.
 - All clients: the server URL is configurable (any compatible self-hosted instance), an About / Legal screen
   shows the copyright, the AGPL notice, `source_code_url` from `GET /meta` and a link to `TRADEMARKS.md`.
+  The UI direction for all clients is `docs/DESIGN.md`.
 
 ## 15. Logging, privacy and telemetry
 - `log/slog` JSON logs with request ID, user ID (when known), route, status and duration. Redacted:
@@ -584,6 +604,22 @@ Phase 1 verification (details in `docs/PROGRESS.md`):
 Open questions (also listed in `docs/PROGRESS.md`):
 1. **MinIO distribution**: the availability and license terms of maintained MinIO server images must be checked
    in phase 3. The API uses only the S3 API, so another S3-compatible server can replace MinIO if needed.
-2. **Android application ID** `io.github.madarlevi.kolikaja` is derived from the GitHub account in SPEC §11 so no
-   domain is invented. It becomes permanent after the first store release; the maintainer should confirm it.
+2. **Android application ID** `io.github.madarlevi.kolikaja` is tracked in madarlevi/kolikaja-android.
 3. Presigned POST through the `/storage` path of the reverse proxy must be verified at runtime (phase 3).
+
+## 19. Continuous integration, releases and security gates
+- `.github/workflows/ci.yml` runs on pushes to `main`, on pull requests, weekly and on demand. A `detect` job
+  finds which components exist; jobs for missing components are skipped, so the workflow is green before
+  the code exists. Jobs: actionlint, OpenAPI lint + authorization matrix, Go (gofmt, vet, race tests,
+  golangci-lint with gosec, gosec, govulncheck), migrations and schema-constraint tests on a PostgreSQL 17
+  service container, web (npm audit at `high`, eslint-plugin-security, lint, typecheck, tests, build),
+  gitleaks, Semgrep (custom SQL rules with tests + Go and TypeScript rulesets, metrics off), CodeQL (Go and
+  JavaScript/TypeScript, `security-extended`), dependency review on pull requests, Docker images + Compose
+  smoke test, and the OWASP ZAP baseline scan.
+- `.github/workflows/release.yml` (tags `vX.Y.Z`): release with the contract asset; images to GHCR once the
+  Dockerfiles exist.
+- Workflow hardening: top-level `permissions: contents: read`, job-level elevation only where needed, every
+  third-party action pinned to a full commit SHA, `persist-credentials: false`, no secrets other than
+  `GITHUB_TOKEN`. Dependabot updates Go modules, npm, GitHub Actions and Docker base images.
+- Security gate (D-10): at the end of every phase all CI security jobs are green and the `security-reviewer`
+  subagent has reviewed the phase; no high or critical finding may stay open. Details: `docs/SECURITY-PLAN.md`.
