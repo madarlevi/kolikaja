@@ -43,3 +43,25 @@ Scope: madarlevi/kolikaja, madarlevi/kolikaja-android, madarlevi/kolikaja-ios as
 | 11 | Unsupported legal claims | PASS | None in the new documents (DESIGN, SECURITY-PLAN, mobile READMEs and docs). |
 | – | Generated code | NOTED | Generated client files carry no SPDX header; `api-client/README.md` and `KoliKajaAPI/README.md` state their origin and licence. |
 | – | App Store and AGPL | OPEN | Recorded as a maintainer decision for kolikaja-ios before any App Store release; not decided here (not legal advice). |
+
+## 2026-11-28 – session 3 (backend MVP, Docker, README)
+Run by the `legal-auditor` subagent (read-only) on the uncommitted changes of `feat/api-mvp-docker`. This is a
+consistency check, not legal advice, and does not establish compliance.
+
+| Check | Result | Notes |
+|---|---|---|
+| 1 LICENSE | PASS | SHA-256 `0d96a4ff…abcb0`, 34 523 bytes, unchanged. |
+| 2 Licence identifier | FAIL → fixed | Release images would have inherited GitHub's `AGPL-3.0` label; `release.yml` now sets `org.opencontainers.image.licenses=AGPL-3.0-only` and the title. |
+| 3 Copyright | PASS | 112 notices, all `Copyright (C) 2026 madarlevi`. |
+| 4 SPDX headers | PASS | All new files; `apps/api/go.mod` header added (info). |
+| 5 Placeholders | PASS | Only reserved example domains; operator fields empty by default; `TODO(operator)` added to `deploy/env.example`; README uses `kolikaja.example.org`. |
+| 6 Unsupported claims | FAIL → fixed | ARCHITECTURE claimed a CI verification that did not exist yet (reworded, PROGRESS updated); README wording on data visibility and logging corrected. |
+| 7 Trademarks | NOT CHECKED (TRADEMARKS.md, phase 7) | README trademark paragraph added. |
+| 8 Disclaimer | NOT CHECKED (DISCLAIMER.md, phase 7) | Demo meals no longer carry invented allergen data; README allergen note added. |
+| 9 Third-party licences | FAIL → fixed | `THIRD_PARTY_LICENSES.md` added; the image ships LICENSE, the list and every linked module's licence files under `/usr/share/doc/kolikaja/`. CI licence policy deferred (T-53 (9)). |
+| 10 Privacy | NOT CHECKED (PRIVACY.md, phase 7) | Operator must fill `PRIVACY_POLICY_URL`. |
+
+AGPL source offer: README now distinguishes §13 (network use of modified versions) from §4–6 (distribution of
+copies); `SOURCE_CODE_URL` must be an absolute http(s) URL (fail fast). Open `TODO(operator)` items: security
+contact (SECURITY.md), legal URLs and contact per deployment, `SOURCE_CODE_URL` for modified versions, the
+operator's data-protection review.

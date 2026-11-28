@@ -5394,6 +5394,12 @@ components:
           maximum: 1000
     MealStats:
       type: object
+      description: |
+        Community aggregates; individual ratings of other users are never returned. Small groups would
+        reveal individual values, so aggregates appear only from 3 contributions: `rating_average` is null
+        and `rating_distribution` is all zeros while `rating_count` is below 3; `trusted_rating_count` is 0
+        and `trusted_rating_average` null while fewer than 3 trusted reviewers rated; `recommended_count` and
+        `not_recommended_count` are both 0 while fewer than 3 recommendations exist.
       required: [rating_count, rating_average, rating_distribution, trusted_rating_count, trusted_rating_average, recommended_count, not_recommended_count]
       properties:
         rating_count:
@@ -5403,7 +5409,7 @@ components:
           type: [number, 'null']
           minimum: 1
           maximum: 5
-          description: Rounded to two decimals; null without ratings.
+          description: Rounded to two decimals; null while `rating_count` is below 3.
         rating_distribution:
           type: array
           minItems: 5
@@ -5411,7 +5417,7 @@ components:
           items:
             type: integer
             minimum: 0
-          description: Number of ratings with value 1, 2, 3, 4 and 5 (index 0 = value 1).
+          description: Number of ratings with value 1, 2, 3, 4 and 5 (index 0 = value 1); all zeros while `rating_count` is below 3.
         trusted_rating_count:
           type: integer
           minimum: 0

@@ -528,7 +528,7 @@ Security headers (API): `Content-Security-Policy: default-src 'none'; frame-ance
 `Cache-Control: no-store` (except image variants), `Strict-Transport-Security` when served over TLS.
 Web (served by Caddy): CSP `default-src 'self'; img-src 'self' blob: data:; connect-src 'self';
 frame-ancestors 'none'; base-uri 'self'; form-action 'self'`, `X-Frame-Options: DENY`,
-`Permissions-Policy` (camera only for self), `Cross-Origin-Opener-Policy: same-origin`.
+`Permissions-Policy` (camera only for self), `Cross-Origin-Opener-Policy: same-origin`. The API also sends `Cross-Origin-Embedder-Policy: require-corp` (T-51).
 CORS is off unless `CORS_ALLOWED_ORIGINS` lists origins; native apps do not need CORS.
 
 ## 12. API contract and client generation
@@ -555,6 +555,12 @@ CORS is off unless `CORS_ALLOWED_ORIGINS` lists origins; native apps do not need
   From the first release on, released migrations are frozen (CLAUDE.md); schema changes go into new migrations.
 
 ## 13. Deployment topology (phase 3)
+> **Current MVP stack (2026-11-28, T-46):** `docker compose up` starts `secrets-init` (one-shot, API image,
+> `/app/admin init-secrets`: random database password and JWT key in the `secrets` volume, no `.env` needed),
+> `postgres` (internal `backend` network only), `migrate` and `api` (publishes `${HTTP_PORT:-8080}` directly, on
+> the `backend` and `edge` networks). MinIO, `minio-init`, the web image and Caddy described below are added with
+> the photo pipeline and the web app; the `.env` + `gen-secrets.sh` flow below is replaced by `secrets-init`.
+
 Compose services: `postgres` (17-alpine, volume, `pg_isready`), `minio` (volume, health check; see the open
 question in §18), `minio-init` (one-shot: bucket, lifecycle rule, least-privilege user and policy), `migrate`
 (one-shot, API image, `/app/migrate up`), `api` (depends on healthy postgres and minio and on migrate
@@ -612,6 +618,11 @@ Phase 1 verification (details in `docs/PROGRESS.md`):
   low findings are addressed in this document, the migrations and the contract (see `docs/PROGRESS.md`).
 - Contract: `@redocly/cli` 2.84.0 lint passes (two documented ignores for health probes); project-rule checks
   (CSRF on unsafe cookie operations, scopes, 401/403/404 presence, bounded request schemas) pass.
+
+Session 3 verification (2026-11-28, details in `docs/PROGRESS.md`): the MVP operations of T-45 run against
+PostgreSQL 17 (embedded binaries) in 17 `TestAuthz_*` and 19 flow tests; the binaries were smoke-tested with the
+Compose environment variables locally. The Docker image and the Compose stack are checked by the CI `docker`
+job (D-08); the run URL is recorded in `docs/PROGRESS.md` once it exists, until then they are not verified.
 
 Open questions (also listed in `docs/PROGRESS.md`):
 1. **MinIO distribution**: the availability and license terms of maintained MinIO server images must be checked

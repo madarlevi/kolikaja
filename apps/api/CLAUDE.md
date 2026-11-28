@@ -14,7 +14,9 @@ internal/contract/    OpenAPI loader for tooling and test harnesses (not used by
 internal/authzmatrix/ generator and checker of docs/api/authz-matrix.md
 migrations/           NNNN_name.up.sql / NNNN_name.down.sql
 tools/                repository tools (authzmatrix CLI used by scripts/check-authz-matrix.sh)
+tests/testenv/        shared harness: real router + PostgreSQL, fresh schema per package, adjustable clock
 tests/authz/          cross-dormitory authorization tests, one TestAuthz_<OperationId> per operation
+tests/flows/          end-to-end API behaviour (auth, sessions, validation, menus, ratings) through HTTP
 tests/integration/    tests against PostgreSQL (KOLIKAJA_TEST_DATABASE_URL, empty database)
 tests/security/       SQL injection / XSS payload harness generated from the contract (KOLIKAJA_API_URL)
 ```
@@ -39,6 +41,7 @@ Dependencies point inward: handler -> service -> repo. Handlers never import rep
 - `golangci-lint run` (config in `.golangci.yml`, gosec enabled; CI pins the version)
 - `gosec ./...` and `govulncheck ./...` (versions pinned in `.github/workflows/ci.yml`)
 - `go run ./cmd/api` only with a local database; otherwise record as not verified
+- gosec suppressions in non-test code: `// #nosec <rule> -- <reason>` (docs/DECISIONS.md T-48)
 - The Go version is pinned by the `go` and `toolchain` lines of `go.mod` (latest stable at the time of writing).
 
 ## Migrations
@@ -48,5 +51,5 @@ Dependencies point inward: handler -> service -> repo. Handlers never import rep
 ## Tests
 - Unit tests next to code.
 - Authorization tests in `tests/authz/`: for every dormitory-scoped endpoint, a user from dormitory A must get 403 or 404 on dormitory B resources. Use the `authz-tenant-isolation` skill. Name each test `TestAuthz_<OperationId>` (operationId with a capital first letter); `docs/api/authz-matrix.md` picks it up automatically.
-- Integration tests need PostgreSQL: set `KOLIKAJA_TEST_DATABASE_URL` to an empty database. CI provides a PostgreSQL 17 service container; locally use any PostgreSQL 17 (Docker is not available, see `docs/ENVIRONMENT.md`).
+- Integration tests need PostgreSQL: set `KOLIKAJA_TEST_DATABASE_URL` to an empty database whose name ends with `_test`, `_ci` or `_it`, and run the database packages with `go test -p 1 ./tests/...` (they share the database). CI provides a PostgreSQL 17 service container; locally use any PostgreSQL 17 (Docker is not available, see `docs/ENVIRONMENT.md`).
 - Security payload tests (`tests/security/`) run against a running API when `KOLIKAJA_API_URL` is set.

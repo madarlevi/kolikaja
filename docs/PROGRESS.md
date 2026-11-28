@@ -32,7 +32,7 @@ All findings were addressed in the design before committing; the reviewer was no
 | Severity | Finding | Resolution |
 |----------|---------|------------|
 | medium | Refresh did not check refresh-token expiry or session client type | Refresh algorithm rewritten (ARCHITECTURE §4.3): idle expiry enforced, client type must match endpoint, used token is always reuse; contract descriptions updated |
-| medium | Empty `TRUSTED_PROXIES` default would merge all clients into one rate-limit key | Compose sets it to the fixed `frontend` subnet; right-most untrusted hop; Caddy overwrites `X-Forwarded-For`; warning when empty (§3.4, §11, §13) |
+| medium | Empty `TRUSTED_PROXIES` default would merge all clients into one rate-limit key | Compose sets it to the fixed `frontend` subnet; right-most untrusted hop; Caddy overwrites `X-Forwarded-For`; warning when empty (§3.4, §11, §13). Session 3: the MVP stack has no proxy, so the variable is empty and the API logs a warning in production (T-46). |
 | medium | `/storage` on the app origin exposed cookies and a script-capable surface | Proxy forwards only `POST /storage/<bucket>`, strips `Cookie`/`Authorization`, adds `CSP: sandbox`, `nosniff`, attachment; policy returns 204; separate origin recommended (§8, T-28) |
 | medium | Global admin could make themselves admin of any private dormitory | Only existing unbanned members, never self, no membership creation, required reason sent to dormitory staff; `joined_via = 'admin_assigned'` removed from the schema (§5.5, T-09) |
 | medium | Admin reset tokens allowed silent takeover | No tokens for self or other global admins; owner notified (`account.password_reset_issued`); 32-byte tokens; consumed on password change and deletion (§4.8, T-08) |
@@ -211,28 +211,79 @@ is secure.
 
 Not re-reviewed by the subagent after the fixes; the CI run on the fixed commit is the verification.
 
+## Session 3 – backend MVP, one-command Docker start, README (2026-11-28)
+Scope chosen by the maintainer (D-13): core backend + `docker compose up` + Android MVP; iOS later.
+This repository's part is on branch `feat/api-mvp-docker`.
+- [x] **Backend MVP** (T-45): 23 operations – meta and health, register, native login/refresh/logout, `/me`,
+  memberships, dormitory search/create/get/join, menus (list, create, today, week), meal detail and stats,
+  ratings and recommendations (put/delete). Bearer tokens only; other operations answer `404`.
+  Verified locally against PostgreSQL 17 (embedded): unit tests, 17 `TestAuthz_*` tests plus extra
+  former-member/suspension/deleted-dormitory cases, 19 flow tests, integration tests (see verification log).
+- [x] **Admin CLI** `cmd/admin`: `promote`, `demo-data` (T-47), `init-secrets` (T-46). Migrations runner `cmd/migrate`.
+- [x] **One-command Compose start** (T-46): `docker-compose.yml`, `deploy/docker/api.Dockerfile`, `.dockerignore`,
+  `deploy/env.example` (optional, no secrets), `deploy/scripts/smoke-test.sh`. Local container-equivalent smoke
+  test of the binaries with the Compose environment variables: PASS. **Docker image and Compose stack: not
+  verified yet** – the CI `docker` job runs them on the pull request (run URL below once available).
+- [x] **README.md** (quick start, first administrator, demo data, Android testing, configuration, operations,
+  development, licence, trademarks) and **THIRD_PARTY_LICENSES.md**.
+- [x] CI: database job runs `tests/integration`, `tests/authz`, `tests/flows` (`-p 1`); Docker job builds the
+  image, starts the stack without `.env`, runs the smoke test, hardening checks, the injection payload harness,
+  a log check and a restart check; ZAP targets `/api/v1/meta`; release images get explicit OCI labels.
+- [x] `security-reviewer` and `legal-auditor` subagents run on the changes (tables below); findings fixed or recorded.
+- [x] Authorization matrix regenerated: 17 tests implemented, 87 planned.
+
+### Security review (2026-11-28, session 3 backend MVP)
+No critical or high findings. Fixes are in the same pull request; not re-reviewed by the subagent, the CI run is
+the verification.
+
+| Sev | Finding | Resolution |
+|-----|---------|------------|
+| medium | M1 login brute force: no per-account ceiling across IPs; IPv6 keyed by full address | Fixed: ≤ 100 failed logins per account per hour across all clients (then 429), 5/min per client+account, IPv6 rate-limit keys by /64. Exponential back-off: deferred (T-53). |
+| medium | M2 limiter memory: raw e-mail in keys, unbounded map | Fixed: e-mail length checked first, keys hold a hash, table capped at 200 000 keys (fail closed with 429). |
+| medium | M3 only the first `X-Forwarded-For` line read | Fixed: all header lines joined before the right-to-left walk; unit test with two lines. |
+| medium | M4 plain HTTP published on all interfaces | Fixed: published on `127.0.0.1` by default (`HTTP_BIND=0.0.0.0` for LAN phone tests, documented); startup warning for production with a non-loopback `http://` address. |
+| medium | M5 small-group statistics reveal individual ratings | Fixed (T-52): aggregates only from 3 contributions (average, distribution, trusted count, recommendation counts); contract descriptions updated. |
+| low | L1 refresh ignored instance bans and deleted accounts | Fixed: banned → 403 `account_banned` and session revoked; deleted → 401 and session revoked; tests. |
+| low | L2 suspended users could rejoin or create dormitories | Fixed: `RequireWritable` in join and create; tests. |
+| low | L3 no warning for empty `TRUSTED_PROXIES` | Fixed: startup warning in production (correct when clients connect directly). |
+| low | L4 30-meal cap still validated every meal | Fixed: early 422. |
+| low | L5 `/readyz` query per call | Fixed: result cached for one second. |
+| low | L6 no per-request timeout | Fixed: 15 s context deadline; deadline errors map to 503 `service_unavailable`. |
+| low | L7 bidi and zero-width characters accepted | Fixed: rejected in every validated text field (ZWJ allowed for emoji). |
+| low | L8 every service mounted the whole secrets volume; postgres kept all capabilities | Fixed: `db-secrets` and `app-secrets` volumes (PostgreSQL and `migrate` never see the JWT key); postgres `cap_drop: ALL` + the five capabilities its entrypoint needs. |
+| low | L9 missing authorization template cases | Fixed: former member, deleted dormitory, instance-wide suspension, forged query/body parameters, other member's recommendation, private dormitory search. |
+| low | L10 refresh branches untested | Fixed: concurrent refresh (one 200, one 401, session revoked), web session on the native endpoint, banned and deleted accounts. |
+| info | I1–I7 | Recorded in T-53. |
+
+### Legal audit (2026-11-28, session 3) – details in `docs/LEGAL_AUDIT.md`
+1 high, 3 medium, 6 low. Fixed: image now carries LICENSE, THIRD_PARTY_LICENSES.md and the licence files of all
+linked modules (high); release images get `org.opencontainers.image.licenses=AGPL-3.0-only`; ARCHITECTURE no
+longer claims an unverified CI result; demo meals carry no invented allergen data; README wording on data
+visibility, logging, AGPL §13 and §4–6, trademarks and allergen reliability; `SOURCE_CODE_URL` validated;
+go.mod header. Deferred: CI licence policy for dependency review (T-53).
+
 ## Phase 2 – Backend
-- [ ] Config loading, fail-fast on missing secrets
-- [ ] Auth: register, login, logout, refresh rotation, reuse detection, sessions, password change, account deletion
+- [x] Config loading, fail-fast on missing secrets (session 3)
+- [~] Auth: register, login, logout, refresh rotation, reuse detection (session 3); sessions list, password change, account deletion open
 - [ ] Users: profile, avatar upload, statistics, reputation, trusted reviewer
-- [ ] Dormitories: CRUD, search, join/leave, invitations, membership, dormitory settings
+- [~] Dormitories: search, create, get, join and memberships (session 3); update/delete, leave, invitations, settings open
 - [ ] Roles and RBAC (member, moderator, dormitory admin, global admin)
-- [ ] Menus and meals (daily/weekly, categories, allergens, publishing)
-- [ ] Ratings (1–5, one active per user per meal, DB unique constraint, distribution)
+- [~] Menus and meals: list, create (with meals, categories, allergens, publishing), today, week, meal detail (session 3); update/delete open
+- [x] Ratings (1–5, one active per user per meal, DB unique constraint, distribution) (session 3)
 - [ ] Comments (pagination, edit/delete own, moderator delete, reports)
 - [ ] Photos (MinIO, presigned upload, validation, moderator removal)
-- [ ] Recommendations (separate from rating)
+- [x] Recommendations (separate from rating) (session 3)
 - [ ] Moderation (reports, review queue, suspension, audit log)
 - [ ] In-app notifications
 - [ ] API keys for server-to-server (hashed, scoped, expiring, rate limited)
-- [ ] Rate limiting, security headers, CORS, CSRF
-- [ ] Authorization tests for cross-dormitory access
+- [~] Rate limiting and security headers (session 3); CORS/CSRF with the web app
+- [~] Authorization tests for cross-dormitory access: 17 of 70 dormitory-scoped operations (session 3)
 
 ## Phase 3 – Infrastructure
-- [ ] API Dockerfile (non-root, multi-stage)
+- [!] API Dockerfile (non-root, multi-stage) – session 3, verified by CI on the pull request
 - [ ] Web Dockerfile
-- [ ] docker-compose.yml with PostgreSQL, MinIO, migrations job, health checks, restart policies, volumes
-- [ ] `.env.example` with placeholders only
+- [!] docker-compose.yml with PostgreSQL, migrations job, generated secrets, health checks, restart policies, volumes – session 3 (MinIO with photos), verified by CI on the pull request
+- [x] Optional settings template without secrets: `deploy/env.example` (T-46; a root `.env.example` is blocked by the agent's settings)
 - [ ] Backup and restore scripts
 
 ## Phase 4 – Web application
@@ -249,7 +300,7 @@ Moved to madarlevi/kolikaja-android (D-06); tracked in its `docs/PROGRESS.md`.
 Moved to madarlevi/kolikaja-ios (D-06); tracked in its `docs/PROGRESS.md`.
 
 ## Phase 7 – Documentation and legal
-- [ ] README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY (placeholder contact; preliminary `SECURITY.md` exists), DISCLAIMER, PRIVACY (template), THIRD_PARTY_LICENSES, COPYRIGHT, TRADEMARKS.md
+- [~] README and THIRD_PARTY_LICENSES (session 3); CONTRIBUTING, CODE_OF_CONDUCT, SECURITY (placeholder contact; preliminary `SECURITY.md` exists), DISCLAIMER, PRIVACY (template), COPYRIGHT, TRADEMARKS.md open
 - [x] LICENSE (unmodified official AGPL text; SHA-256 `0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0`, recorded in session 2)
 - [x] GitHub issue and PR templates (session 2)
 - [ ] `legal-audit` run and findings resolved
@@ -279,6 +330,8 @@ Moved to madarlevi/kolikaja-ios (D-06); tracked in its `docs/PROGRESS.md`.
 9. **Confirm T-30** (Tailwind + Radix UI in the shadcn/ui style) before phase 4.
 10. Decide on the remaining `Bash(grep:*)` allow (T-44 (3)); recommendation: remove it.
 11. Review decisions T-30…T-44 (session 2).
+12. Review decisions D-13 and T-45…T-53 (session 3), especially T-46 (secrets generated into Docker volumes
+    instead of `.env`), T-52 (statistics only from 3 ratings) and the deferred items of T-53.
 
 ## Verification log
 | Date | Step | Result |
@@ -304,3 +357,9 @@ Moved to madarlevi/kolikaja-ios (D-06); tracked in its `docs/PROGRESS.md`.
 | 2026-11-28 | PR #1 squash-merged as e02ebaa; CI on main: https://github.com/madarlevi/kolikaja/actions/runs/46130015228 | PASS. |
 | 2026-11-28 | Release v0.1.0 (tag on e02ebaa): workflow https://github.com/madarlevi/kolikaja/actions/runs/46130249178, release https://github.com/madarlevi/kolikaja/releases/tag/v0.1.0 | PASS: pre-release with `openapi-v0.1.0.yaml` (207 734 bytes, SHA-256 `90dc14413a731e0b943d4987c515d3db703b733915d50e4ac08f77c4e2a1f859`, matches `main` and the value pinned in both mobile repositories) and `openapi-v0.1.0.yaml.sha256`. Images job ran without Dockerfiles (steps skipped). From this tag on, migrations 0001–0015 are released (T-31). |
 | 2026-11-28 | Mobile repositories pushed (first commit set directly to `main`, D-11) | kolikaja-android full run https://github.com/madarlevi/kolikaja-android/actions/runs/46130434700 and kolikaja-ios full run https://github.com/madarlevi/kolikaja-ios/actions/runs/46130436654: PASS (contract download from the v0.1.0 release, checksum, regenerated clients identical to the committed ones, `swift build` of the Swift package on macOS, gitleaks, actionlint). Their first push runs had gitleaks fail on the first-push range only; details in their `docs/PROGRESS.md`. |
+| 2026-11-28 | Session 3 local checks (Go 1.27.4, apps/api) | PASS: gofmt, go vet, go test ./... (unit), golangci-lint v2.15.0 0 issues, gosec v2.30.0 0 issues (`-exclude-dir=tmp`), govulncheck v1.10.0 no vulnerabilities, authorization matrix 112/112, actionlint v1.7.12. |
+| 2026-11-28 | Session 3 database tests on PostgreSQL 17 (embedded-postgres v1.34.0, local helper in git-ignored `apps/api/tmp`) | PASS: `go test -p 1 ./tests/...` – integration, 17 `TestAuthz_*` + extra writer cases, 19 flow tests. |
+| 2026-11-28 | Session 3 container-equivalent smoke test (local binaries, Compose environment variables, `*_FILE` secrets) | PASS: secrets generated then kept, `migrate up` to 15, health probe subcommand, register, `demo-data` (idempotent), `promote`, login, today/week, rating 201, `/meta`, security headers; injection payload harness with writes against the running API: PASS, 0 responses ≥ 500; no secret, password or token in the API log. |
+| 2026-11-28 | `docker compose config` | NOT RUN locally: the Compose plugin is not installed (D-01); YAML parsed and checked with PyYAML; CI runs it. |
+| 2026-11-28 | `security-reviewer` on the session 3 backend | 0 critical, 0 high, 5 medium, 10 low, 7 info; all medium/low fixed, info recorded (T-53). |
+| 2026-11-28 | `legal-auditor` on the session 3 changes | 1 high, 3 medium, 6 low; fixed except the CI licence policy (T-53). |
