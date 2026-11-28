@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Custom Semgrep rule: SQL built from template literals or string concatenation and
+# passed to a database call in TypeScript or JavaScript (tooling scripts, tests, any
+# future Node service). Tests: ts-sql-string-building.ts (semgrep --test .semgrep).
+rules:
+  - id: kolikaja-ts-sql-string-building
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      SQL passed to $DB.$METHOD is built with a template literal or string concatenation.
+      Use a parameterized query (placeholders and a separate values array).
+    metadata:
+      category: security
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+      owasp: "A03:2021 - Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$METHOD(`...${$X}...`, ...)
+          - pattern: $DB.$METHOD("..." + $X, ...)
+          - pattern: $DB.$METHOD($X + "...", ...)
+          - pattern: |
+              const $Q = `...${$X}...`;
+              ...
+              $DB.$METHOD($Q, ...);
+          - pattern: |
+              const $Q = "..." + $X;
+              ...
+              $DB.$METHOD($Q, ...);
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(query|execute|exec|raw|unsafe|prepare|\$queryRawUnsafe|\$executeRawUnsafe)$

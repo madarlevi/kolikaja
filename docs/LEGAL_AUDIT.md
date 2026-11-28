@@ -26,3 +26,20 @@ themselves are phase 7 deliverables and do not exist yet.
 
 Remaining `TODO(operator)` items from this phase: privacy policy URL, terms URL, trademarks URL and operator
 contact (instance configuration), and `SOURCE_CODE_URL` for operators running modified versions.
+
+## 2026-11-26 – session 2 (repository split, CI, security tooling)
+
+Scope: madarlevi/kolikaja, madarlevi/kolikaja-android, madarlevi/kolikaja-ios as prepared in this session.
+
+| # | Check | Result | Evidence |
+|---|-------|--------|----------|
+| – | LICENSE file | PASS | Downloaded with `curl -fsSL https://www.gnu.org/licenses/agpl-3.0.txt`, never edited: 34 523 bytes, ASCII, LF, SHA-256 `0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0`, first line "GNU AFFERO GENERAL PUBLIC LICENSE", "Version 3, 19 November 2007". The same bytes are in all three repositories (one distinct hash). `.gitattributes` keeps LF, so the committed bytes are identical. |
+| 1 | Same license identifier | PASS | Every new comment-capable, non-generated file in the three repositories carries `SPDX-License-Identifier: AGPL-3.0-only`; the two older hook scripts of this repository got the header in this session. JSON, TSV and Markdown files have no comment syntax or are documentation. |
+| 2 | Same copyright holder and year | PASS | `Copyright (C) 2026 madarlevi` in every header and in the mobile READMEs. |
+| 3 | `TODO(operator)` contacts | PASS (scope) | The `SECURITY.md` of all three repositories uses `TODO(operator)` for the security contact; no address was invented. |
+| 4 | No ® symbol | PASS | Only in the rules that forbid it. |
+| 5 | README trademark notice | PASS (mobile) / NOT CHECKED (kolikaja) | Mobile READMEs state that trademark rules will be in `TRADEMARKS.md` and that the AGPL grants no trademark rights; the kolikaja README is a phase 7 deliverable. |
+| 9 | Third-party licences | NOT CHECKED | New Go dependencies of `apps/api` (tooling and tests only: gopkg.in/yaml.v3, golang-migrate, pgx) and the generated clients' runtime needs (Retrofit, OkHttp, kotlinx.serialization) are audited in phase 7. The generated Swift package has no dependencies. |
+| 11 | Unsupported legal claims | PASS | None in the new documents (DESIGN, SECURITY-PLAN, mobile READMEs and docs). |
+| – | Generated code | NOTED | Generated client files carry no SPDX header; `api-client/README.md` and `KoliKajaAPI/README.md` state their origin and licence. |
+| – | App Store and AGPL | OPEN | Recorded as a maintainer decision for kolikaja-ios before any App Store release; not decided here (not legal advice). |

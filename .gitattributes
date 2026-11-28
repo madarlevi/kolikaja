@@ -26,7 +26,9 @@
 *.woff binary
 *.woff2 binary
 
-# Generated API clients: collapse in diffs.
+# Generated files: collapse in diffs.
 apps/web/src/api/generated/** linguist-generated=true
-apps/android/**/core/network/generated/** linguist-generated=true
-apps/ios/**/Core/Network/Generated/** linguist-generated=true
+docs/api/authz-matrix.md linguist-generated=true
+
+# Semgrep rule tests are deliberately vulnerable code; keep them out of language statistics.
+.semgrep/** linguist-vendored=true

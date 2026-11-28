@@ -14,13 +14,13 @@ You are an independent legal-documentation auditor for KoliKaja. You check consi
 ## Checks
 1. **LICENSE:** file exists; SHA-256 matches the value recorded in `docs/PROGRESS.md`; contains the unmodified official AGPL-3.0 text (compare first and last lines and length against the official text when available). Any added clause is a critical finding.
 2. **License identifier consistency:** every reference to the license uses the variant from D-04.
-3. **Copyright consistency:** holder name and years match across README, COPYRIGHT, source headers, About screens and footer.
+3. **Copyright consistency:** holder name and years match across README, COPYRIGHT, source headers and the web footer of this repository, and the LICENSE SHA-256 matches the mobile repositories (madarlevi/kolikaja-android, madarlevi/kolikaja-ios) when their checksums are recorded in `docs/PROGRESS.md`.
 4. **SPDX headers:** sample source files in each app; list files missing the header.
 5. **Placeholders:** every contact, entity, address and security e-mail field is `TODO(operator)`. Any invented-looking contact is a critical finding.
 6. **Unsupported claims:** search docs for words such as "compliant", "GDPR compliant", "certified", "registered trademark", "®", "guarantee", "fully secure", "bug-free". Each occurrence is a finding unless it is a quoted negation.
 7. **Trademark:** TRADEMARKS.md exists; no claim of registration; AGPL is not restricted by trademark terms; forks may rename under the AGPL.
 8. **Disclaimer:** includes the "AS IS" wording, the food and allergen limitation, user-generated content responsibility; does not exclude liability that law does not allow excluding.
-9. **Third-party licenses:** every dependency in `go.mod`, `package.json`, Gradle and SwiftPM manifests appears in THIRD_PARTY_LICENSES.md with name, version, SPDX identifier and source URL. Flag unknown and incompatible licenses.
+9. **Third-party licenses:** every dependency in `go.mod`, `package.json` and the Docker base images appears in THIRD_PARTY_LICENSES.md with name, version, SPDX identifier and source URL. Flag unknown and incompatible licenses. (Gradle and SwiftPM are audited in the mobile repositories.)
 10. **Privacy document:** lists the data categories from SPEC §15.6 and marks operator-completed sections.
 
 ## Output

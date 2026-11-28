@@ -18,6 +18,9 @@ KoliKaja is multi-tenant by dormitory. A user in dormitory A must never read or 
 8. **Audit:** moderator and admin actions write a row to `audit_logs` in the same transaction.
 
 ## Authorization test template (`apps/api/tests/authz/`)
+Name the test `TestAuthz_<OperationId>` (operationId with a capital first letter, for example
+`TestAuthz_PutMyRating`). `docs/api/authz-matrix.md` lists every operation; once the function exists, the
+matrix (regenerated with `scripts/check-authz-matrix.sh --write`) switches the row from "planned" to the test name.
 For each new endpoint, add table-driven tests with at least:
 - anonymous user -> 401
 - authenticated non-member of dormitory A -> 404 on A's resource
@@ -25,6 +28,13 @@ For each new endpoint, add table-driven tests with at least:
 - member role below required role -> 403
 - member with required role -> 2xx
 - forged `role` or `dormitory_id` in body/query -> ignored, result unchanged
+- for operations with an object-level check (see the "Tenant check" column of `docs/api/authz-matrix.md`):
+  another member of the same dormitory acting on someone else's comment, photo, rating, session,
+  notification or upload -> 403 or 404, and a moderator acting on a user with an equal or higher role -> 403
+- reports: the subject of a report never sees or resolves it (404)
+
+An empty test function does not count: each `TestAuthz_<OperationId>` must contain the cases above that apply
+(reviewed in the phase 2 security gate).
 
 ## Common mistakes to avoid
 - Checking membership in the handler but not in the query that loads the resource.

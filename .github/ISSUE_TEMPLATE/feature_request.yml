@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+name: Feature request
+description: Suggest an improvement for KoliKaja.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Out of scope for this version (see docs/SPEC.md §13): PDF parsing, OCR, menu scraping, n8n workflows,
+        payments, subscriptions, AI recommendations, external automation services and push notifications.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and why is it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Menus and meals
+        - Ratings, recommendations and comments
+        - Photos
+        - Dormitories and membership
+        - Moderation
+        - Accounts and authentication
+        - Administration
+        - Deployment and operations
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: The request does not need a paid or mandatory external service.
+          required: true
+        - label: The request keeps dormitories isolated from each other.
+          required: true

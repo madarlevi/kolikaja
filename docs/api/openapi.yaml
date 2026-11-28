@@ -7,7 +7,10 @@
 openapi: 3.1.0
 info:
   title: KoliKaja API
-  version: 1.0.0
+  # Contract release version. It equals the release tag without "v" (checked by
+  # .github/workflows/release.yml); the URL version of the API is /api/v1 independently.
+  # 0.x: the contract may still change before the first stable release.
+  version: 0.1.0
   summary: Multi-dormitory food menu and community rating platform.
   description: |
     REST API shared by the KoliKaja web, Android and iOS clients and by server-to-server integrations.
@@ -3205,7 +3208,11 @@ paths:
       tags: [admin]
       operationId: adminUpdateUser
       summary: Grant or revoke global administrator rights
-      description: The last global administrator cannot be demoted (`409 last_admin`).
+      description: |
+        The last global administrator cannot be demoted (`409 last_admin`). Every grant or revocation is
+        audit-logged and notifies all global administrators (`admin.oversight`). A user demoted within the
+        last 30 days stays protected like a global administrator (no reset tokens, no sanctions), so a
+        demotion cannot be used to take over or ban a peer.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -3246,7 +3253,9 @@ paths:
       summary: Suspend or ban a user instance-wide
       description: |
         `suspension` makes the account read-only everywhere; `ban` blocks login and revokes all
-        sessions. Global administrators cannot sanction themselves or other global administrators.
+        sessions. Global administrators cannot sanction themselves, other global administrators, or
+        users who were global administrators within the last 30 days (`403 forbidden`). Every other
+        global administrator receives an `admin.oversight` notification.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -3289,8 +3298,10 @@ paths:
         For users who forgot their password (there is no e-mail delivery in this version). The token
         (32 random bytes, base64url) is shown once, expires after one hour and replaces any earlier
         unused token. Hand it to the verified account owner out of band. Global administrators cannot
-        issue tokens for themselves or for other global administrators (`403 forbidden`). The account
-        owner receives an `account.password_reset_issued` notification and the action is audit-logged.
+        issue tokens for themselves, for other global administrators, or for users who were global
+        administrators within the last 30 days (`403 forbidden`); their recovery goes through the
+        operator CLI. The account owner receives an `account.password_reset_issued` notification, every
+        other global administrator an `admin.oversight` notification, and the action is audit-logged.
         Outstanding tokens are consumed when the password changes or the account is deleted.
       security:
         - cookieAuth: []
@@ -3498,7 +3509,10 @@ paths:
       tags: [admin]
       operationId: adminListEscalatedReports
       summary: Escalated reports
-      description: Reports escalated by moderators and reports about dormitory administrators (escalated automatically).
+      description: |
+        Reports escalated by moderators and reports about dormitory administrators (escalated
+        automatically). Reports whose subject is the caller are never listed; they stay with the other
+        global administrators (with a single global administrator, the operator must appoint another one).
       x-required-role: global_admin
       x-rate-limit: read
       parameters:
@@ -3532,7 +3546,7 @@ paths:
       summary: Resolve an escalated report
       description: |
         Same semantics as `resolveReport`. Only escalated reports can be resolved here; a sanction
-        created here is instance-wide.
+        created here is instance-wide. Reports whose subject is the caller return `404`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -4802,6 +4816,7 @@ components:
             - membership.role_changed
             - membership.admin_assigned
             - account.password_reset_issued
+            - admin.oversight
         dormitory_id:
           oneOf:
             - $ref: '#/components/schemas/Uuid'

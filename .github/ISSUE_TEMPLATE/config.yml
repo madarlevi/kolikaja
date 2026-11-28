@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/madarlevi/kolikaja/blob/main/SECURITY.md
+    about: Please do not open public issues for vulnerabilities. Follow the private reporting process in SECURITY.md.
