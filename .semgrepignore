@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# Replaces Semgrep's default ignore list, which skips tests/ and *_test.go: test code that
+# talks to a database must follow the same SQL rules. The deliberately vulnerable rule tests
+# in .semgrep/ are excluded on the command line (--exclude .semgrep) instead.
+.git/
+node_modules/
+dist/
+build/
+coverage/

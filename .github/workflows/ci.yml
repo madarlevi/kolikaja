@@ -2,10 +2,11 @@
 # Copyright (C) 2026 madarlevi
 #
 # Continuous integration for madarlevi/kolikaja.
-# Jobs for components that do not exist yet are skipped through the `detect` job
-# (hashFiles() is not available in job-level `if`). The security tooling is described
-# in docs/SECURITY-PLAN.md. Third-party actions are pinned to full commit SHAs;
-# Dependabot keeps them current.
+# Jobs for components that do not exist yet (web, Compose) are skipped through the
+# `detect` job (hashFiles() is not available in job-level `if`). The Go, migration and
+# CodeQL Go jobs always run: apps/api exists, so deleting files cannot switch them off.
+# The security tooling is described in docs/SECURITY-PLAN.md. Third-party actions are
+# pinned to full commit SHAs; Dependabot keeps them current.
 name: CI
 
 on:
@@ -40,8 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      api: ${{ steps.files.outputs.api }}
-      migrations: ${{ steps.files.outputs.migrations }}
       web: ${{ steps.files.outputs.web }}
       compose: ${{ steps.files.outputs.compose }}
     steps:
@@ -52,8 +51,6 @@ jobs:
         id: files
         run: |
           {
-            echo "api=${{ hashFiles('apps/api/go.mod') != '' }}"
-            echo "migrations=${{ hashFiles('apps/api/migrations/*.up.sql') != '' }}"
             echo "web=${{ hashFiles('apps/web/package.json') != '' }}"
             echo "compose=${{ hashFiles('docker-compose.yml') != '' }}"
           } | tee -a "$GITHUB_OUTPUT"
@@ -91,12 +88,14 @@ jobs:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
       - name: Check the authorization matrix (one row per operation)
+        env:
+          # Set to "1" when phase 2 closes: then every dormitory-scoped operation needs an
+          # implemented TestAuthz_ test (docs/SECURITY-PLAN.md, security gate).
+          AUTHZ_REQUIRE_TESTS: "0"
         run: scripts/check-authz-matrix.sh
 
   go:
     name: Go (fmt, vet, test, golangci-lint, gosec, govulncheck)
-    needs: detect
-    if: needs.detect.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -134,8 +133,6 @@ jobs:
 
   migrations:
     name: Migrations and schema constraints (PostgreSQL 17)
-    needs: detect
-    if: needs.detect.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -256,8 +253,6 @@ jobs:
 
   codeql-go:
     name: CodeQL (go)
-    needs: detect
-    if: needs.detect.outputs.api == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -303,6 +298,36 @@ jobs:
       - uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           category: /language:javascript-typescript
+
+  code-scanning-gate:
+    name: Security gate (no open high or critical code-scanning alerts)
+    needs: [codeql-go, codeql-js]
+    # Runs even when codeql-js is skipped (no web app yet); fails if an analysis failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: read
+    steps:
+      - name: CodeQL analyses succeeded or were skipped
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: |
+          echo "::error::a CodeQL analysis failed"
+          exit 1
+      - name: No open high or critical alerts on this ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+        run: |
+          alerts="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&ref=${REF}&per_page=100" \
+            --jq '.[] | select((.rule.security_severity_level // "") as $s | $s == "high" or $s == "critical" or ($s == "" and .rule.severity == "error")) | "\(.rule.security_severity_level // .rule.severity) \(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)"')"
+          if [ -n "$alerts" ]; then
+            echo "$alerts"
+            echo "::error::open high or critical code-scanning alerts on ${REF} (docs/SECURITY-PLAN.md, security gate)"
+            exit 1
+          fi
+          echo "no open high or critical code-scanning alerts on ${REF}"
 
   dependency-review:
     name: Dependency review
