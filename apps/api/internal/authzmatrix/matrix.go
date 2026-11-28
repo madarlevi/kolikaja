@@ -62,9 +62,54 @@ func TestName(operationID string) string {
 	return "TestAuthz_" + strings.ToUpper(operationID[:1]) + operationID[1:]
 }
 
+// extraChecks lists object-level and role-relation checks that come on top of the tenant
+// check (docs/ARCHITECTURE.md §5, §10; contract descriptions). Same-dormitory "other
+// member's resource" cases must be part of the operation's TestAuthz_ test.
+type extraCheck struct{ operationID, note string }
+
+var extraCheckList = []extraCheck{
+	{"updateComment", "owner check: author only"},
+	{"deleteComment", "owner check: author, or moderator"},
+	{"deletePhoto", "owner check: uploader, or moderator"},
+	{"completePhotoUpload", "owner check: uploader only"},
+	{"putMyRating", "own record of the caller"},
+	{"deleteMyRating", "own record of the caller"},
+	{"putMyRecommendation", "own record of the caller"},
+	{"deleteMyRecommendation", "own record of the caller"},
+	{"revokeMySession", "owner check: session of the caller"},
+	{"markNotificationRead", "owner check: notification of the caller"},
+	{"completeAvatarUpload", "owner check: upload of the caller"},
+	{"getAvatarImage", "viewer shares an active membership with the owner"},
+	{"updateMember", "target role below the caller; never self"},
+	{"removeMember", "target role below the caller; never self"},
+	{"createSanction", "target is a current or former member, role below the caller; cited report about the target"},
+	{"revokeSanction", "sanction of this dormitory"},
+	{"listReports", "subject's role below the caller; never reports about the caller"},
+	{"getReport", "subject's role below the caller; never reports about the caller"},
+	{"resolveReport", "subject's role below the caller; never reports about the caller"},
+	{"escalateReport", "subject's role below the caller; never reports about the caller"},
+	{"adminAssignDormitoryAdmin", "target is an active, unbanned member of the dormitory; never the caller; staff notified"},
+	{"adminListEscalatedReports", "never reports about the caller"},
+	{"adminResolveReport", "escalated reports only; never reports about the caller"},
+	{"adminUpdateUser", "last global admin protected; all global admins notified"},
+	{"adminCreatePasswordResetToken", "never self or a current or recent (30 days) global admin; owner and global admins notified"},
+	{"adminCreateSanction", "never self or a current or recent (30 days) global admin"},
+	{"adminDeleteDormitory", "audit-logged"},
+	{"adminRestoreDormitory", "audit-logged"},
+}
+
+var extraChecks = func() map[string]string {
+	m := make(map[string]string, len(extraCheckList))
+	for _, c := range extraCheckList {
+		m[c.operationID] = c.note
+	}
+	return m
+}()
+
 // BuildRows classifies every operation. existingTests is the set of test function names
-// found in the authorization test directory.
-func BuildRows(doc *contract.Document, existingTests map[string]bool) []Row {
+// found in the authorization test directory. An operation whose path matches no known
+// scoping rule is an error, so new path prefixes cannot slip through unclassified.
+func BuildRows(doc *contract.Document, existingTests map[string]bool) ([]Row, error) {
 	rows := make([]Row, 0, len(doc.Operations))
 	for _, op := range doc.Operations {
 		row := Row{
@@ -80,7 +125,14 @@ func BuildRows(doc *contract.Document, existingTests map[string]bool) []Row {
 		case "member", "moderator", "admin":
 			row.DormitoryRole = op.RequiredRole
 		}
-		row.DormitoryScoped, row.TenantCheck = scope(op)
+		var err error
+		row.DormitoryScoped, row.TenantCheck, err = scope(op)
+		if err != nil {
+			return nil, err
+		}
+		if extra, ok := extraChecks[op.ID]; ok {
+			row.TenantCheck += "; " + extra
+		}
 		row.NeedsCrossTenantTest = strings.HasPrefix(row.DormitoryScoped, "yes")
 
 		name := TestName(op.ID)
@@ -94,7 +146,24 @@ func BuildRows(doc *contract.Document, existingTests map[string]bool) []Row {
 		}
 		rows = append(rows, row)
 	}
-	return rows
+	return rows, nil
+}
+
+// UnknownExtraChecks returns the operationIds in extraChecks that the contract does not
+// declare (a renamed or removed operation would otherwise lose its object-level note).
+func UnknownExtraChecks(doc *contract.Document) []string {
+	known := map[string]bool{}
+	for _, op := range doc.Operations {
+		known[op.ID] = true
+	}
+	var unknown []string
+	for id := range extraChecks {
+		if !known[id] {
+			unknown = append(unknown, id)
+		}
+	}
+	sort.Strings(unknown)
+	return unknown
 }
 
 func authentication(op contract.Operation) string {
@@ -132,29 +201,32 @@ func has(req contract.SecurityRequirement, scheme string) bool {
 	return ok
 }
 
-func scope(op contract.Operation) (scoped, check string) {
+func scope(op contract.Operation) (scoped, check string, err error) {
 	p := op.Path
 	switch {
 	case strings.HasPrefix(p, "/dormitories/{dormitoryId}"):
-		return scopePath, checkBoth
+		return scopePath, checkBoth, nil
 	case strings.HasPrefix(p, "/invitations/"):
-		return scopeInvitation, checkBoth
+		return scopeInvitation, checkBoth, nil
 	case strings.HasPrefix(p, "/avatars/"):
-		return scopeShared, checkBoth
-	case p == "/me/ratings" || p == "/me/stats":
-		return scopeMine, checkMineRepo
+		return scopeShared, checkBoth, nil
+	// Lists that contain dormitory data are filtered by the caller's active memberships.
+	case p == "/me/ratings" || p == "/me/stats" || strings.HasPrefix(p, "/me/notifications"):
+		return scopeMine, checkMineRepo, nil
 	case p == "/me" || strings.HasPrefix(p, "/me/"):
-		return scopeOwn, checkOwner
+		return scopeOwn, checkOwner, nil
 	case strings.HasPrefix(p, "/admin/"):
-		return scopeInstance, checkAdmin
+		return scopeInstance, checkAdmin, nil
 	case p == "/dormitories" && op.Method == "GET":
-		return scopeDirectory, checkPublic
+		return scopeDirectory, checkPublic, nil
 	case p == "/dormitories" && op.Method == "POST":
-		return scopeNo, checkPolicy
-	case strings.HasPrefix(p, "/auth/logout"):
-		return scopeOwn, checkOwner
+		return scopeNo, checkPolicy, nil
+	case p == "/auth/logout":
+		return scopeOwn, checkOwner, nil
+	case p == "/meta" || p == "/healthz" || p == "/readyz" || strings.HasPrefix(p, "/auth/"):
+		return scopeNo, checkNone, nil
 	default:
-		return scopeNo, checkNone
+		return "", "", fmt.Errorf("authzmatrix: no scoping rule for %s %s (%s); add one to scope() in matrix.go", op.Method, op.Path, op.ID)
 	}
 }
 
@@ -188,10 +260,13 @@ func Render(rows []Row) string {
 	b.WriteString("- **Dormitory scoped**: `yes (path)` for `/dormitories/{dormitoryId}/…`; `derived` when the dormitory\n")
 	b.WriteString("  comes from the resource (invitation code, shared membership, caller's memberships).\n")
 	b.WriteString("- **Tenant check**: where isolation is enforced (docs/ARCHITECTURE.md §5.3). `both` = the service checks\n")
-	b.WriteString("  membership and role, and every repository query also filters by `dormitory_id`.\n")
+	b.WriteString("  membership and role, and every repository query also filters by `dormitory_id`. Object-level checks\n")
+	b.WriteString("  (owner of the resource, role of the target, report subject) follow after a semicolon.\n")
 	b.WriteString("- **Tests**: test function in `apps/api/tests/authz/`. Every dormitory-scoped operation needs a\n")
-	b.WriteString("  cross-dormitory test (template in `.claude/skills/authz-tenant-isolation/SKILL.md`); `planned` tests\n")
-	b.WriteString("  are written in phase 2 and the column switches automatically once the function exists.\n\n")
+	b.WriteString("  cross-dormitory test, and operations with an object-level check also an \"other member's resource\"\n")
+	b.WriteString("  case (template in `.claude/skills/authz-tenant-isolation/SKILL.md`). `planned` tests are written in\n")
+	b.WriteString("  phase 2; the column switches automatically once the function exists, and the phase 2 security gate runs\n")
+	b.WriteString("  the check with `AUTHZ_REQUIRE_TESTS=1`, which fails while any scoped row is still planned.\n\n")
 	b.WriteString("| operationId | Method and path | Authentication | Global role | Dormitory role | Dormitory scoped | Tenant check | Tests (apps/api/tests/authz) |\n")
 	b.WriteString("|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
@@ -244,7 +319,9 @@ func FindTests(dir string) (map[string]bool, error) {
 }
 
 // Check compares the committed matrix with the contract and returns every problem found.
-func Check(doc *contract.Document, rows []Row, committed string) []string {
+// With requireTests, every dormitory-scoped operation must have an implemented test
+// (used by the phase 2 security gate, see docs/SECURITY-PLAN.md).
+func Check(doc *contract.Document, rows []Row, committed string, requireTests bool) []string {
 	var problems []string
 	inSpec := map[string]bool{}
 	for _, op := range doc.Operations {
@@ -275,6 +352,9 @@ func Check(doc *contract.Document, rows []Row, committed string) []string {
 	for _, r := range rows {
 		if r.NeedsCrossTenantTest && !strings.Contains(r.Tests, "TestAuthz_") {
 			problems = append(problems, fmt.Sprintf("dormitory-scoped operation %s has no cross-dormitory test (planned or implemented)", r.OperationID))
+		}
+		if requireTests && r.NeedsCrossTenantTest && strings.HasPrefix(r.Tests, "planned") {
+			problems = append(problems, fmt.Sprintf("dormitory-scoped operation %s still has only a planned test (%s)", r.OperationID, TestName(r.OperationID)))
 		}
 	}
 	if len(problems) == 0 && committed != Render(rows) {

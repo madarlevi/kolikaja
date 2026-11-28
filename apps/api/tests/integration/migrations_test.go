@@ -2,8 +2,9 @@
 // Copyright (C) 2026 madarlevi
 
 // Package integration holds tests that need a real PostgreSQL database.
-// They are skipped unless KOLIKAJA_TEST_DATABASE_URL points at an EMPTY database,
-// for example the PostgreSQL service container of the CI "migrations" job.
+// They are skipped unless KOLIKAJA_TEST_DATABASE_URL points at an EMPTY, disposable database
+// whose name ends with _test, _ci or _it (for example the PostgreSQL service container of the
+// CI "migrations" job); any other database name makes them fail before touching it.
 package integration
 
 import (
@@ -54,6 +55,11 @@ func newMigrate(t *testing.T, dsn string) *migrate.Migrate {
 	return m
 }
 
+// disposableSuffixes are the database name endings these destructive tests accept.
+var disposableSuffixes = []string{"_test", "_ci", "_it"}
+
+// connect opens a connection and refuses to continue unless the database is clearly a
+// disposable test database, because the tests drop every table.
 func connect(t *testing.T, dsn string) *pgx.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -63,7 +69,17 @@ func connect(t *testing.T, dsn string) *pgx.Conn {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
-	return conn
+	var name string
+	if err := conn.QueryRow(ctx, "SELECT current_database()").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range disposableSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			return conn
+		}
+	}
+	t.Fatalf("refusing to run destructive migration tests on database %q: its name must end with one of %v", name, disposableSuffixes)
+	return nil
 }
 
 func ignoreNoChange(err error) error {

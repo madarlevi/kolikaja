@@ -28,6 +28,13 @@ For each new endpoint, add table-driven tests with at least:
 - member role below required role -> 403
 - member with required role -> 2xx
 - forged `role` or `dormitory_id` in body/query -> ignored, result unchanged
+- for operations with an object-level check (see the "Tenant check" column of `docs/api/authz-matrix.md`):
+  another member of the same dormitory acting on someone else's comment, photo, rating, session,
+  notification or upload -> 403 or 404, and a moderator acting on a user with an equal or higher role -> 403
+- reports: the subject of a report never sees or resolves it (404)
+
+An empty test function does not count: each `TestAuthz_<OperationId>` must contain the cases above that apply
+(reviewed in the phase 2 security gate).
 
 ## Common mistakes to avoid
 - Checking membership in the handler but not in the query that loads the resource.

@@ -39,23 +39,40 @@ paths:
           csrfToken: []
         - bearerAuth: []
       x-required-role: moderator
+  /dormitories/{dormitoryId}/comments/{commentId}:
+    patch:
+      operationId: updateComment
+      x-required-role: member
+  /me/notifications:
+    get:
+      operationId: listNotifications
+      x-required-role: authenticated
   /admin/users:
     get:
       operationId: adminListUsers
       x-required-role: global_admin
 `
 
-func parse(t *testing.T) *contract.Document {
+func parse(t *testing.T, spec string) *contract.Document {
 	t.Helper()
-	doc, err := contract.Parse([]byte(miniSpec))
+	doc, err := contract.Parse([]byte(spec))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return doc
 }
 
+func build(t *testing.T, doc *contract.Document, existing map[string]bool) []Row {
+	t.Helper()
+	rows, err := BuildRows(doc, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
 func TestBuildRowsClassifiesOperations(t *testing.T) {
-	rows := BuildRows(parse(t), map[string]bool{"TestAuthz_ListMenus": true})
+	rows := build(t, parse(t, miniSpec), map[string]bool{"TestAuthz_ListMenus": true})
 	byID := map[string]Row{}
 	for _, r := range rows {
 		byID[r.OperationID] = r
@@ -66,6 +83,7 @@ func TestBuildRowsClassifiesOperations(t *testing.T) {
 		{"getMeta", "public", "–", "–", scopeNo, "n/a (public)"},
 		{"listMenus", "session cookie; bearer; API key (menus:read)", "–", "member", scopePath, "`TestAuthz_ListMenus`"},
 		{"createMenu", "session cookie + CSRF; bearer", "–", "moderator", scopePath, "planned: `TestAuthz_CreateMenu`"},
+		{"listNotifications", "session cookie; bearer", "–", "–", scopeMine, "planned: `TestAuthz_ListNotifications`"},
 		{"adminListUsers", "session cookie; bearer", "global_admin", "–", scopeInstance, "planned: `TestAuthz_AdminListUsers`"},
 	}
 	for _, tt := range tests {
@@ -78,29 +96,58 @@ func TestBuildRowsClassifiesOperations(t *testing.T) {
 			t.Errorf("%s: got %+v", tt.id, r)
 		}
 	}
+	if !strings.Contains(byID["updateComment"].TenantCheck, "owner check: author only") {
+		t.Errorf("updateComment should carry its owner check, got %q", byID["updateComment"].TenantCheck)
+	}
+}
+
+func TestBuildRowsRejectsUnknownPathPrefix(t *testing.T) {
+	doc := parse(t, `
+paths:
+  /reports-export:
+    get:
+      operationId: exportEverything
+      x-required-role: authenticated
+`)
+	if _, err := BuildRows(doc, nil); err == nil || !strings.Contains(err.Error(), "no scoping rule") {
+		t.Fatalf("expected an unclassified-path error, got %v", err)
+	}
 }
 
 func TestCheckDetectsMissingAndUnknownRows(t *testing.T) {
-	doc := parse(t)
-	rows := BuildRows(doc, nil)
+	doc := parse(t, miniSpec)
+	rows := build(t, doc, nil)
 	good := Render(rows)
-	if problems := Check(doc, rows, good); len(problems) != 0 {
+	if problems := Check(doc, rows, good, false); len(problems) != 0 {
 		t.Fatalf("rendered matrix should pass, got %v", problems)
 	}
 
 	missing := strings.Replace(good, "| `createMenu` |", "| removed |", 1)
-	if problems := Check(doc, rows, missing); !containsText(problems, "createMenu") {
+	if problems := Check(doc, rows, missing, false); !containsText(problems, "createMenu") {
 		t.Errorf("missing row not reported: %v", problems)
 	}
 
 	unknown := good + "| `deleteEverything` | `DELETE /x` | public | – | – | no | n/a | n/a |\n"
-	if problems := Check(doc, rows, unknown); !containsText(problems, "deleteEverything") {
+	if problems := Check(doc, rows, unknown, false); !containsText(problems, "deleteEverything") {
 		t.Errorf("unknown row not reported: %v", problems)
 	}
 
 	stale := strings.Replace(good, "moderator", "member", 1)
-	if problems := Check(doc, rows, stale); !containsText(problems, "out of date") {
+	if problems := Check(doc, rows, stale, false); !containsText(problems, "out of date") {
 		t.Errorf("stale matrix not reported: %v", problems)
+	}
+}
+
+func TestCheckRequireTests(t *testing.T) {
+	doc := parse(t, miniSpec)
+	all := map[string]bool{"TestAuthz_ListMenus": true, "TestAuthz_CreateMenu": true, "TestAuthz_UpdateComment": true, "TestAuthz_ListNotifications": true}
+	partial := build(t, doc, map[string]bool{"TestAuthz_ListMenus": true})
+	if problems := Check(doc, partial, Render(partial), true); !containsText(problems, "createMenu still has only a planned test") {
+		t.Errorf("planned test not reported in require mode: %v", problems)
+	}
+	complete := build(t, doc, all)
+	if problems := Check(doc, complete, Render(complete), true); len(problems) != 0 {
+		t.Errorf("complete matrix should pass in require mode: %v", problems)
 	}
 }
 
@@ -134,6 +181,9 @@ func TestRepositoryMatrixIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if unknown := UnknownExtraChecks(doc); len(unknown) > 0 {
+		t.Fatalf("object-level checks for unknown operations: %v", unknown)
+	}
 	root := filepath.Dir(filepath.Dir(filepath.Dir(specPath)))
 	existing, err := FindTests(filepath.Join(root, "apps", "api", "tests", "authz"))
 	if err != nil {
@@ -143,8 +193,8 @@ func TestRepositoryMatrixIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := BuildRows(doc, existing)
-	if problems := Check(doc, rows, string(committed)); len(problems) != 0 {
+	rows := build(t, doc, existing)
+	if problems := Check(doc, rows, string(committed), false); len(problems) != 0 {
 		t.Fatalf("authorization matrix problems:\n%s", strings.Join(problems, "\n"))
 	}
 	if got := len(ParseOperationIDs(string(committed))); got != len(doc.Operations) {

@@ -89,11 +89,11 @@ func apiKey(id, scope string) string {
 // its own transaction that is rolled back.
 func TestSchemaConstraints(t *testing.T) {
 	dsn := databaseURL(t)
+	conn := connect(t, dsn) // refuses non-disposable databases before anything is migrated
 	m := newMigrate(t, dsn)
 	if err := ignoreNoChange(m.Up()); err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	conn := connect(t, dsn)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -162,6 +162,8 @@ func TestSchemaConstraints(t *testing.T) {
 		{"sanction citing a report about the same user accepted", []string{
 			userReport(reportA, dormA, userA, userB, userB), sanction(userB, dormA, reportA, userA)}, ""},
 		{"password reset notification kind accepted", []string{`INSERT INTO notifications (id, user_id, kind) VALUES (gen_random_uuid(), '` + userA + `', 'account.password_reset_issued')`}, ""},
+		{"admin oversight notification kind accepted", []string{`INSERT INTO notifications (id, user_id, kind) VALUES (gen_random_uuid(), '` + userA + `', 'admin.oversight')`}, ""},
+		{"unknown notification kind rejected", []string{`INSERT INTO notifications (id, user_id, kind) VALUES (gen_random_uuid(), '` + userA + `', 'marketing.newsletter')`}, "23514"},
 		{"notification payload must be an object", []string{`INSERT INTO notifications (id, user_id, kind, payload) VALUES (gen_random_uuid(), '` + userA + `', 'announcement.published', '[1,2]'::jsonb)`}, "23514"},
 	}
 

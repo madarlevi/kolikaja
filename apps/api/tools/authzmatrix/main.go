@@ -20,27 +20,34 @@ func main() {
 	matrixPath := flag.String("matrix", "", "path to docs/api/authz-matrix.md")
 	testsDir := flag.String("tests", "", "directory with TestAuthz_* tests")
 	write := flag.Bool("write", false, "rewrite the matrix instead of checking it")
+	requireTests := flag.Bool("require-tests", false, "fail while any dormitory-scoped operation has only a planned test")
 	flag.Parse()
 	if *specPath == "" || *matrixPath == "" || *testsDir == "" {
-		fmt.Fprintln(os.Stderr, "usage: authzmatrix -spec <openapi.yaml> -matrix <authz-matrix.md> -tests <dir> [-write]")
+		fmt.Fprintln(os.Stderr, "usage: authzmatrix -spec <openapi.yaml> -matrix <authz-matrix.md> -tests <dir> [-write] [-require-tests]")
 		os.Exit(2)
 	}
-	if err := run(*specPath, *matrixPath, *testsDir, *write); err != nil {
+	if err := run(*specPath, *matrixPath, *testsDir, *write, *requireTests); err != nil {
 		fmt.Fprintln(os.Stderr, "authzmatrix:", err)
 		os.Exit(1)
 	}
 }
 
-func run(specPath, matrixPath, testsDir string, write bool) error {
+func run(specPath, matrixPath, testsDir string, write, requireTests bool) error {
 	doc, err := contract.Load(specPath)
 	if err != nil {
 		return err
+	}
+	if unknown := authzmatrix.UnknownExtraChecks(doc); len(unknown) > 0 {
+		return fmt.Errorf("object-level checks defined for unknown operations: %v", unknown)
 	}
 	existing, err := authzmatrix.FindTests(testsDir)
 	if err != nil {
 		return err
 	}
-	rows := authzmatrix.BuildRows(doc, existing)
+	rows, err := authzmatrix.BuildRows(doc, existing)
+	if err != nil {
+		return err
+	}
 	rendered := authzmatrix.Render(rows)
 	if write {
 		if err := os.WriteFile(filepath.Clean(matrixPath), []byte(rendered), 0o600); err != nil {
@@ -53,13 +60,17 @@ func run(specPath, matrixPath, testsDir string, write bool) error {
 	if err != nil {
 		return fmt.Errorf("read matrix: %w", err)
 	}
-	problems := authzmatrix.Check(doc, rows, string(committed))
+	problems := authzmatrix.Check(doc, rows, string(committed), requireTests)
 	for _, p := range problems {
 		fmt.Fprintln(os.Stderr, "FAIL:", p)
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%d problem(s)", len(problems))
 	}
-	fmt.Printf("ok: %d operations in the contract, %d rows in the matrix\n", len(doc.Operations), len(authzmatrix.ParseOperationIDs(string(committed))))
+	mode := ""
+	if requireTests {
+		mode = " (all scoped operations have implemented tests)"
+	}
+	fmt.Printf("ok: %d operations in the contract, %d rows in the matrix%s\n", len(doc.Operations), len(authzmatrix.ParseOperationIDs(string(committed))), mode)
 	return nil
 }
