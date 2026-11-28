@@ -72,7 +72,7 @@ func Load(getenv Getenv, readFile ReadFile) (*Config, error) {
 		Env:                  l.str("KOLIKAJA_ENV", "production"),
 		HTTPAddr:             l.str("HTTP_ADDR", ":8080"),
 		PublicBaseURL:        strings.TrimRight(l.required("PUBLIC_BASE_URL"), "/"),
-		DBMaxConns:           int32(l.intRange("DB_MAX_CONNS", 10, 1, 200)), // #nosec G115 -- bounded to 1..200 by intRange.
+		DBMaxConns:           l.int32Range("DB_MAX_CONNS", 10, 1, 200),
 		DBStatementTimeout:   l.duration("DB_STATEMENT_TIMEOUT", 5*time.Second),
 		AccessTokenTTL:       l.duration("ACCESS_TOKEN_TTL", 10*time.Minute),
 		RefreshTokenTTL:      l.duration("REFRESH_TOKEN_TTL", 720*time.Hour),
@@ -241,6 +241,20 @@ func (l *loader) intRange(name string, def, minV, maxV int) int {
 		return def
 	}
 	return n
+}
+
+// int32Range parses with a 32-bit size, so the conversion below cannot overflow.
+func (l *loader) int32Range(name string, def, minV, maxV int32) int32 {
+	raw := strings.TrimSpace(l.getenv(name))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || n < int64(minV) || n > int64(maxV) {
+		l.fail("%s must be an integer between %d and %d", name, minV, maxV)
+		return def
+	}
+	return int32(n)
 }
 
 func (l *loader) duration(name string, def time.Duration) time.Duration {

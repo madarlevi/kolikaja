@@ -393,7 +393,7 @@ jobs:
           docker compose logs --no-color api > api.log
           if grep -q '"status":5[0-9][0-9]' api.log; then grep '"status":5' api.log | head -20; exit 1; fi
           # Tokens and password hashes must never be logged (route names may contain "password").
-          if grep -qiE 'bearer [a-z0-9_-]{8}|\$argon2id\$|eyJhbGciOi' api.log; then echo "credential in the API log"; exit 1; fi
+          if grep -qiE -e 'bearer [a-z0-9_-]{8}' -e 'argon2id' -e 'eyJhbGciOi' api.log; then echo "credential in the API log"; exit 1; fi
       - name: Restart keeps the generated secrets and the data
         run: |
           docker compose down

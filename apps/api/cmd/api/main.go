@@ -51,7 +51,8 @@ func run() error {
 		logger = slog.New(slog.NewTextHandler(os.Stdout, opts))
 	}
 	slog.SetDefault(logger)
-	logger.Info("starting", "version", version, "config", cfg)
+	// LogValue lists only non-secret settings.
+	logger.Info("starting", "version", version, "config", cfg.LogValue())
 	for _, w := range cfg.Warnings() {
 		logger.Warn(w)
 	}
