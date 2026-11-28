@@ -1,0 +1,138 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# KoliKaja – one-command start:   docker compose up -d --build
+#
+# No .env file is needed. On the first start the "secrets-init" job generates a random
+# database password ("db-secrets" volume) and JWT key ("app-secrets" volume): unique per
+# installation, never printed, kept on later starts. Optional, non-secret settings can be put
+# into a .env file; see deploy/env.example. The API listens on http://127.0.0.1:8080 only;
+# HTTP_BIND=0.0.0.0 makes it reachable from the local network (phone testing).
+# For a public server put a TLS reverse proxy in front of it (docs/ARCHITECTURE.md §13).
+name: kolikaja
+
+x-api-image: &api-image
+  image: kolikaja-api:local
+  build:
+    context: .
+    dockerfile: deploy/docker/api.Dockerfile
+    args:
+      VERSION: ${KOLIKAJA_VERSION:-dev}
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-db-env: &db-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: kolikaja
+  DB_NAME: kolikaja
+  DB_SSLMODE: disable # traffic stays on the internal "backend" network
+  DB_PASSWORD_FILE: /run/kolikaja-secrets/db/postgres_password
+
+services:
+  # One-shot: generates missing secrets (root only to set file ownership; no network).
+  secrets-init:
+    <<: [*api-image, *hardening]
+    user: "0:0"
+    cap_add: [CHOWN]
+    command: ["/app/admin", "init-secrets", "--dir", "/run/kolikaja-secrets"]
+    network_mode: none
+    volumes:
+      - db-secrets:/run/kolikaja-secrets/db
+      - app-secrets:/run/kolikaja-secrets/app
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: kolikaja
+      POSTGRES_DB: kolikaja
+      POSTGRES_PASSWORD_FILE: /run/kolikaja-secrets/db/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - db-secrets:/run/kolikaja-secrets/db:ro
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
+    # The entrypoint starts as root to prepare the data directory, then drops to uid 70.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    shm_size: 128mb
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kolikaja", "-d", "kolikaja"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # One-shot: applies the database migrations embedded in the API image.
+  migrate:
+    <<: [*api-image, *hardening]
+    command: ["/app/migrate", "up"]
+    environment:
+      <<: *db-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - db-secrets:/run/kolikaja-secrets/db:ro
+    networks: [backend]
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  api:
+    <<: [*api-image, *hardening]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *db-env
+      KOLIKAJA_ENV: ${KOLIKAJA_ENV:-production}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      JWT_SECRET_FILE: /run/kolikaja-secrets/app/jwt_secret
+      DORMITORY_CREATION: ${DORMITORY_CREATION:-global_admins}
+      INSTANCE_NAME: ${INSTANCE_NAME:-KoliKaja}
+      SOURCE_CODE_URL: ${SOURCE_CODE_URL:-https://github.com/madarlevi/kolikaja}
+      PRIVACY_POLICY_URL: ${PRIVACY_POLICY_URL:-}
+      TERMS_URL: ${TERMS_URL:-}
+      TRADEMARKS_URL: ${TRADEMARKS_URL:-}
+      OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      - db-secrets:/run/kolikaja-secrets/db:ro
+      - app-secrets:/run/kolikaja-secrets/app:ro
+    tmpfs:
+      - /tmp
+    networks: [backend, edge]
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+networks:
+  backend:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+  db-secrets:
+  app-secrets:

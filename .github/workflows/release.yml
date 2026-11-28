@@ -97,6 +97,10 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/kolikaja-api
           tags: type=semver,pattern={{version}}
+          # Override GitHub's detected "AGPL-3.0" with the exact identifier (D-04).
+          labels: |
+            org.opencontainers.image.title=KoliKaja API
+            org.opencontainers.image.licenses=AGPL-3.0-only
       - name: Build and push the API image
         if: steps.files.outputs.api == 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -104,6 +108,7 @@ jobs:
           context: .
           file: deploy/docker/api.Dockerfile
           push: true
+          build-args: VERSION=${{ github.ref_name }}
           tags: ${{ steps.api-meta.outputs.tags }}
           labels: ${{ steps.api-meta.outputs.labels }}
       - name: Web image metadata

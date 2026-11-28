@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 madarlevi
+#
+# The API image only needs apps/api plus the licence files; everything else stays out of the
+# build context.
+*
+!LICENSE
+!THIRD_PARTY_LICENSES.md
+!apps/
+apps/*
+!apps/api/
+apps/api/tmp/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key

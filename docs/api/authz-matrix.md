@@ -7,7 +7,7 @@ Generated from `docs/api/openapi.yaml` by `scripts/check-authz-matrix.sh --write
 or the file is out of date. To change a row, change the contract (security, `x-required-role`,
 `x-api-key-scopes`) or the scoping rules in `apps/api/internal/authzmatrix`, then regenerate.
 
-Operations: **112** · dormitory-scoped: **70** · authorization tests implemented: **0** · planned: **104**
+Operations: **112** · dormitory-scoped: **70** · authorization tests implemented: **17** · planned: **87**
 
 Columns
 - **Authentication**: accepted credentials. `+ CSRF` means the `X-CSRF-Token` header is required with the cookie.
@@ -34,9 +34,9 @@ Columns
 | `refreshWeb` | `POST /auth/web/refresh` | refresh cookie + CSRF | – | – | no | n/a | planned: `TestAuthz_RefreshWeb` |
 | `loginNative` | `POST /auth/native/login` | public | – | – | no | n/a | n/a (public) |
 | `refreshNative` | `POST /auth/native/refresh` | public | – | – | no | n/a | n/a (public) |
-| `logout` | `POST /auth/logout` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_Logout` |
+| `logout` | `POST /auth/logout` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | `TestAuthz_Logout` |
 | `resetPassword` | `POST /auth/password-reset` | public | – | – | no | n/a | n/a (public) |
-| `getCurrentUser` | `GET /me` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_GetCurrentUser` |
+| `getCurrentUser` | `GET /me` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | `TestAuthz_GetCurrentUser` |
 | `updateCurrentUser` | `PATCH /me` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_UpdateCurrentUser` |
 | `changeEmail` | `PUT /me/email` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_ChangeEmail` |
 | `changePassword` | `PUT /me/password` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_ChangePassword` |
@@ -44,7 +44,7 @@ Columns
 | `exportMyData` | `GET /me/export` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_ExportMyData` |
 | `getMyStats` | `GET /me/stats` | session cookie; bearer | – | – | yes (derived: caller's memberships) | repository query (caller's active memberships) | planned: `TestAuthz_GetMyStats` |
 | `listMyRatings` | `GET /me/ratings` | session cookie; bearer | – | – | yes (derived: caller's memberships) | repository query (caller's active memberships) | planned: `TestAuthz_ListMyRatings` |
-| `listMyDormitories` | `GET /me/dormitories` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_ListMyDormitories` |
+| `listMyDormitories` | `GET /me/dormitories` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | `TestAuthz_ListMyDormitories` |
 | `listMySessions` | `GET /me/sessions` | session cookie; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_ListMySessions` |
 | `revokeMySession` | `DELETE /me/sessions/{sessionId}` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller); owner check: session of the caller | planned: `TestAuthz_RevokeMySession` |
 | `revokeOtherSessions` | `POST /me/sessions/revoke-others` | session cookie + CSRF; bearer | – | – | no (caller's own data) | repository query (owner = caller) | planned: `TestAuthz_RevokeOtherSessions` |
@@ -56,12 +56,12 @@ Columns
 | `getUnreadNotificationCount` | `GET /me/notifications/unread-count` | session cookie; bearer | – | – | yes (derived: caller's memberships) | repository query (caller's active memberships) | planned: `TestAuthz_GetUnreadNotificationCount` |
 | `markNotificationRead` | `POST /me/notifications/{notificationId}/read` | session cookie + CSRF; bearer | – | – | yes (derived: caller's memberships) | repository query (caller's active memberships); owner check: notification of the caller | planned: `TestAuthz_MarkNotificationRead` |
 | `markAllNotificationsRead` | `POST /me/notifications/read-all` | session cookie + CSRF; bearer | – | – | yes (derived: caller's memberships) | repository query (caller's active memberships) | planned: `TestAuthz_MarkAllNotificationsRead` |
-| `searchDormitories` | `GET /dormitories` | session cookie; bearer; API key (dormitories:read) | – | – | no (public directory) | repository query (public dormitories only) | planned: `TestAuthz_SearchDormitories` |
-| `createDormitory` | `POST /dormitories` | session cookie + CSRF; bearer | – | – | no | service (instance policy) | planned: `TestAuthz_CreateDormitory` |
-| `getDormitory` | `GET /dormitories/{dormitoryId}` | session cookie; bearer | – | – | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetDormitory` |
+| `searchDormitories` | `GET /dormitories` | session cookie; bearer; API key (dormitories:read) | – | – | no (public directory) | repository query (public dormitories only) | `TestAuthz_SearchDormitories` |
+| `createDormitory` | `POST /dormitories` | session cookie + CSRF; bearer | – | – | no | service (instance policy) | `TestAuthz_CreateDormitory` |
+| `getDormitory` | `GET /dormitories/{dormitoryId}` | session cookie; bearer | – | – | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_GetDormitory` |
 | `updateDormitory` | `PATCH /dormitories/{dormitoryId}` | session cookie + CSRF; bearer | – | admin | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_UpdateDormitory` |
 | `deleteDormitory` | `DELETE /dormitories/{dormitoryId}` | session cookie + CSRF; bearer | – | admin | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_DeleteDormitory` |
-| `joinDormitory` | `POST /dormitories/{dormitoryId}/join` | session cookie + CSRF; bearer | – | – | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_JoinDormitory` |
+| `joinDormitory` | `POST /dormitories/{dormitoryId}/join` | session cookie + CSRF; bearer | – | – | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_JoinDormitory` |
 | `leaveDormitory` | `POST /dormitories/{dormitoryId}/leave` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_LeaveDormitory` |
 | `listMembers` | `GET /dormitories/{dormitoryId}/members` | session cookie; bearer | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_ListMembers` |
 | `getMember` | `GET /dormitories/{dormitoryId}/members/{userId}` | session cookie; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetMember` |
@@ -79,22 +79,22 @@ Columns
 | `createMealCategory` | `POST /dormitories/{dormitoryId}/meal-categories` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_CreateMealCategory` |
 | `updateMealCategory` | `PATCH /dormitories/{dormitoryId}/meal-categories/{categoryId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_UpdateMealCategory` |
 | `deleteMealCategory` | `DELETE /dormitories/{dormitoryId}/meal-categories/{categoryId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_DeleteMealCategory` |
-| `listMenus` | `GET /dormitories/{dormitoryId}/menus` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_ListMenus` |
-| `createMenu` | `POST /dormitories/{dormitoryId}/menus` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_CreateMenu` |
-| `getTodayMenus` | `GET /dormitories/{dormitoryId}/menus/today` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetTodayMenus` |
-| `getWeekMenus` | `GET /dormitories/{dormitoryId}/menus/week` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetWeekMenus` |
+| `listMenus` | `GET /dormitories/{dormitoryId}/menus` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_ListMenus` |
+| `createMenu` | `POST /dormitories/{dormitoryId}/menus` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_CreateMenu` |
+| `getTodayMenus` | `GET /dormitories/{dormitoryId}/menus/today` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_GetTodayMenus` |
+| `getWeekMenus` | `GET /dormitories/{dormitoryId}/menus/week` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_GetWeekMenus` |
 | `getMenu` | `GET /dormitories/{dormitoryId}/menus/{menuId}` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetMenu` |
 | `updateMenu` | `PATCH /dormitories/{dormitoryId}/menus/{menuId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_UpdateMenu` |
 | `deleteMenu` | `DELETE /dormitories/{dormitoryId}/menus/{menuId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_DeleteMenu` |
 | `createMeal` | `POST /dormitories/{dormitoryId}/menus/{menuId}/meals` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_CreateMeal` |
-| `getMeal` | `GET /dormitories/{dormitoryId}/meals/{mealId}` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetMeal` |
+| `getMeal` | `GET /dormitories/{dormitoryId}/meals/{mealId}` | session cookie; bearer; API key (menus:read, menus:write) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_GetMeal` |
 | `updateMeal` | `PATCH /dormitories/{dormitoryId}/meals/{mealId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_UpdateMeal` |
 | `deleteMeal` | `DELETE /dormitories/{dormitoryId}/meals/{mealId}` | session cookie + CSRF; bearer; API key (menus:write) | – | moderator | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_DeleteMeal` |
-| `getMealStats` | `GET /dormitories/{dormitoryId}/meals/{mealId}/stats` | session cookie; bearer; API key (stats:read) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_GetMealStats` |
-| `putMyRating` | `PUT /dormitories/{dormitoryId}/meals/{mealId}/my-rating` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | planned: `TestAuthz_PutMyRating` |
-| `deleteMyRating` | `DELETE /dormitories/{dormitoryId}/meals/{mealId}/my-rating` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | planned: `TestAuthz_DeleteMyRating` |
-| `putMyRecommendation` | `PUT /dormitories/{dormitoryId}/meals/{mealId}/my-recommendation` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | planned: `TestAuthz_PutMyRecommendation` |
-| `deleteMyRecommendation` | `DELETE /dormitories/{dormitoryId}/meals/{mealId}/my-recommendation` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | planned: `TestAuthz_DeleteMyRecommendation` |
+| `getMealStats` | `GET /dormitories/{dormitoryId}/meals/{mealId}/stats` | session cookie; bearer; API key (stats:read) | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | `TestAuthz_GetMealStats` |
+| `putMyRating` | `PUT /dormitories/{dormitoryId}/meals/{mealId}/my-rating` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | `TestAuthz_PutMyRating` |
+| `deleteMyRating` | `DELETE /dormitories/{dormitoryId}/meals/{mealId}/my-rating` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | `TestAuthz_DeleteMyRating` |
+| `putMyRecommendation` | `PUT /dormitories/{dormitoryId}/meals/{mealId}/my-recommendation` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | `TestAuthz_PutMyRecommendation` |
+| `deleteMyRecommendation` | `DELETE /dormitories/{dormitoryId}/meals/{mealId}/my-recommendation` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; own record of the caller | `TestAuthz_DeleteMyRecommendation` |
 | `listComments` | `GET /dormitories/{dormitoryId}/meals/{mealId}/comments` | session cookie; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_ListComments` |
 | `createComment` | `POST /dormitories/{dormitoryId}/meals/{mealId}/comments` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id | planned: `TestAuthz_CreateComment` |
 | `updateComment` | `PATCH /dormitories/{dormitoryId}/comments/{commentId}` | session cookie + CSRF; bearer | – | member | yes (path) | both: service membership/role check + repository query by dormitory_id; owner check: author only | planned: `TestAuthz_UpdateComment` |
