@@ -27,14 +27,9 @@
       "Bash(git commit:*)",
       "Bash(git branch:*)",
       "Bash(git checkout:*)",
-      "Bash(git push -u origin:*)",
-      "Bash(git push origin:*)",
-      "Bash(curl -fsSL https://www.gnu.org/licenses/agpl-3.0.txt:*)",
       "Bash(ls:*)",
-      "Bash(cat:*)",
       "Bash(sha256sum:*)",
-      "Bash(grep:*)",
-      "Bash(find:*)"
+      "Bash(grep:*)"
     ],
     "deny": [
       "Read(./.env)",
