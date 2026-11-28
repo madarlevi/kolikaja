@@ -263,11 +263,14 @@ loses global administrator rights.
 - There is no e-mail delivery in this version. A global administrator issues a one-time reset token
   (`POST /admin/users/{id}/password-reset-tokens`, 32 random bytes, 1 hour, shown once, hash stored) and hands
   it over out of band; `POST /auth/password-reset` sets the new password and revokes all sessions.
-  Restrictions: no tokens for oneself or for other global administrators (their recovery goes through the
-  operator CLI); the account owner gets an `account.password_reset_issued` notification; the action is
-  audit-logged; outstanding tokens are consumed when the password changes or the account is deleted.
-  A global administrator can still take over an ordinary account this way; that power is inherent to the
-  feature and is made visible rather than prevented (operators also control the database).
+  Restrictions: no tokens for oneself, for other global administrators, or for users who were global
+  administrators within the last 30 days (their recovery goes through the operator CLI); the account owner
+  gets an `account.password_reset_issued` notification and every other global administrator an
+  `admin.oversight` notification (peer oversight that the account holder's own inbox cannot provide once
+  the account is taken over); the action is audit-logged; outstanding tokens are consumed when the
+  password changes or the account is deleted. A global administrator can still take over an ordinary
+  account this way; that power is inherent to the feature and is made visible to the other global
+  administrators rather than prevented (operators also control the database).
 - Account deletion requires the password, deletes all sessions and refresh tokens (including user agent and
   network), consumes reset tokens, ends memberships, removes avatar and photos
   (objects deleted), clears comment texts, deletes ratings, recommendations and notifications, and scrubs
@@ -343,6 +346,12 @@ Assigning a dormitory administrator is limited so that it cannot become a back d
 dormitories: the target must already be an active, unbanned member; the caller cannot assign themselves;
 no membership is ever created; a reason is required and is sent, with the assignment, to the promoted user
 and to all current administrators and moderators of the dormitory.
+
+Global administrators cannot act against peers: no reset tokens or sanctions for current global
+administrators or for users demoted within the last 30 days (determined from the audit log), and every
+grant or revocation of global administrator rights, reset token and instance-wide sanction notifies all
+other global administrators (`admin.oversight`). Escalated reports about a global administrator are never
+shown to that administrator.
 
 ### 5.6 Authorization tests (phase 2)
 `apps/api/tests/authz/` holds table-driven tests for every dormitory-scoped operation, following the
@@ -457,7 +466,9 @@ The iOS and Android apps downscale and convert to JPEG before upload (HEIC is no
 ## 9. Notifications and announcements
 - In-app only. Kinds: `comment.created` (earlier commenters of the same meal, grouped per meal while unread),
   `announcement.published` (priority `important`, every active member with announcement notifications on),
-  `moderation.*` (content removed, sanction applied or lifted, report resolved) and `membership.role_changed`.
+  `moderation.*` (content removed, sanction applied or lifted, report resolved), `membership.role_changed`,
+  `membership.admin_assigned` (global administrator promoted a member), `account.password_reset_issued`
+  (to the account owner) and `admin.oversight` (to all other global administrators on sensitive admin actions).
 - Notifications are written in the same transaction as the event. Fan-out uses one `INSERT … SELECT`.
 - Dormitory notifications are listed only while the user is an active member and are deleted on leaving;
   moderation notifications about the user's own account have `dormitory_id = NULL`.
@@ -470,7 +481,8 @@ The iOS and Android apps downscale and convert to JPEG before upload (HEIC is no
   by the subject's current role prevents anyone from handling a report about themselves:
   subject `member` → moderators and administrators; subject `moderator` → administrators only; subject
   `admin` → escalated to the global administrators when filed. The subject never sees the report or the
-  reporter's identity.
+  reporter's identity, also when the subject is a global administrator (escalated reports about the caller
+  are excluded from `/admin/reports`).
 - Handlers work the queue (oldest first), resolve with `content_removed`, `user_sanctioned`, `no_action` or
   `dismissed` (removal, sanction, notifications and audit row in one transaction), or escalate to global
   administrators. A sanction that cites a report must target the report's subject (database-enforced).
@@ -537,7 +549,7 @@ CORS is off unless `CORS_ALLOWED_ORIGINS` lists origins; native apps do not need
   `openapi-vX.Y.Z.yaml` and its SHA-256 to the GitHub release (0.x releases are pre-releases). The mobile
   repositories pin the version in `api-version.txt` and the checksum in `api-contract.sha256`; their CI
   downloads the asset, verifies the checksum, regenerates the client with a pinned OpenAPI Generator
-  (Kotlin `jvm-retrofit2` + kotlinx.serialization; Swift `swift5` URLSession + async/await) and fails if the
+  (Kotlin `jvm-retrofit2` + kotlinx.serialization; Swift `swift6` URLSession + async/await) and fails if the
   generated code differs from the committed code.
 - Compatibility: `oasdiff breaking` against the previous released contract; breaking changes need `/api/v2`.
   From the first release on, released migrations are frozen (CLAUDE.md); schema changes go into new migrations.

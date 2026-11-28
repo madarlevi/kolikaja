@@ -62,7 +62,7 @@ CREATE TABLE notifications (
             'comment.created', 'announcement.published',
             'moderation.content_removed', 'moderation.sanction_applied', 'moderation.sanction_lifted',
             'moderation.report_resolved', 'membership.role_changed', 'membership.admin_assigned',
-            'account.password_reset_issued')),
+            'account.password_reset_issued', 'admin.oversight')),
     CONSTRAINT notifications_payload_check
         CHECK (jsonb_typeof(payload) = 'object' AND octet_length(payload::text) <= 4096),
     CONSTRAINT notifications_group_key_check
